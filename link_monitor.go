@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"syscall"
 	"unsafe"
@@ -12,6 +13,15 @@ const (
 	DHCP_CLIENT      = "/sbin/udhcpc"
 	BRIDGE_PHY_PORT  = "eth0"
 )
+
+func ReadFileConntent(filename string) (content string) {
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return
+	}
+	content = string(data)
+	return
+}
 
 func main() {
 	l, _ := ListenNetlink()
