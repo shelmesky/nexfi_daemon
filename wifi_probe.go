@@ -5,8 +5,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"os"
+	"runtime/debug"
 	"syscall"
 	"unsafe"
 )
@@ -80,6 +82,13 @@ func (d *afpacket) Close() error {
 }
 
 func (d *afpacket) Read(to []byte) error {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Println(err)
+			debug.PrintStack()
+		}
+	}()
+
 	_, _, err := syscall.Recvfrom(d.fd, to, 0)
 	if err != nil {
 		return err
@@ -89,6 +98,12 @@ func (d *afpacket) Read(to []byte) error {
 
 func HandleFrame(frame []byte) {
 	lens := int(frame[2])
+	defer func() {
+		if err := recover(); err != nil {
+			log.Println(err)
+			debug.PrintStack()
+		}
+	}()
 
 	// beacon frame
 	/*
@@ -117,13 +132,13 @@ func main() {
 
 	iface, err := net.InterfaceByName(monitor_interface)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return
 	}
 
 	dev, err := newDev(iface)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return
 	}
 
@@ -131,7 +146,7 @@ func main() {
 	for {
 		err := dev.Read(frame)
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			continue
 		}
 		HandleFrame(frame)
