@@ -3,16 +3,39 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"syscall"
 	"unsafe"
 )
 
+var (
+	monitor_interface string
+	server_address    string
+)
+
 type afpacket struct {
 	ifce       *net.Interface
 	fd         int
 	sockaddrLL *syscall.SockaddrLinklayer
+}
+
+func init() {
+	flag.StringVar(&monitor_interface, "i", "", "Network interface name to monitor")
+	flag.StringVar(&server_address, "s", "", "http server address")
+}
+
+func CheckFlags() {
+	flag.Parse()
+
+	if monitor_interface == "" {
+		fmt.Println("need network interface name")
+		goto EXIT
+	}
+
+EXIT:
+	os.Exit(1)
 }
 
 func htons(h int) (n int) {
@@ -86,7 +109,9 @@ func HandleFrame(frame []byte) {
 }
 
 func main() {
-	iface, err := net.InterfaceByName("mon0")
+	CheckFlags()
+
+	iface, err := net.InterfaceByName(network_interface)
 	if err != nil {
 		fmt.Println(err)
 		return
