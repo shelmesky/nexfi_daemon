@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"os"
 	"syscall"
 	"unsafe"
 )
@@ -33,6 +34,8 @@ func CheckFlags() {
 		fmt.Println("need network interface name")
 		goto EXIT
 	}
+
+	return
 
 EXIT:
 	os.Exit(1)
@@ -102,16 +105,17 @@ func HandleFrame(frame []byte) {
 	if frame[lens] == 0x40 {
 		mac := frame[lens+10 : lens+16]
 		ssid := frame[lens+26 : (lens + 26 + int(frame[lens+25]))]
+        ssi_signal := 256 - int(frame[30])
 		mac_str := fmt.Sprintf("%x:%x:%x:%x:%x:%x", int(mac[0]), int(mac[1]), int(mac[2]), int(mac[3]), int(mac[4]), int(mac[5]))
 		ssid_str := string(ssid)
-		fmt.Printf("MAC: %s, SSID: %s\n", mac_str, ssid_str)
+        fmt.Printf("MAC: %s, SSID: %s SSI: -%d\n", mac_str, ssid_str, ssi_signal)
 	}
 }
 
 func main() {
 	CheckFlags()
 
-	iface, err := net.InterfaceByName(network_interface)
+	iface, err := net.InterfaceByName(monitor_interface)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -123,8 +127,8 @@ func main() {
 		return
 	}
 
+	frame := make([]byte, 2048)
 	for {
-		frame := make([]byte, 2048)
 		err := dev.Read(frame)
 		if err != nil {
 			fmt.Println(err)
@@ -132,5 +136,4 @@ func main() {
 		}
 		HandleFrame(frame)
 	}
-
 }
