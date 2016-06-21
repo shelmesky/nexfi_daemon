@@ -3,19 +3,46 @@
 package main
 
 import (
+	"encoding/gob"
 	"flag"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"runtime/debug"
+	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 )
+
+const (
+	MAC_ADDR_EXPIRE = 90
+)
+
+type Client struct {
+	Addr   string
+	RSSI   int
+	SSID   string
+	Action int
+}
+
+func NewClient(addr string, rssi int, ssid string, action int) *Client {
+	return &Client{addr, rssi, ssid, action}
+}
+
+type macaddr struct {
+	Addr       string
+	Lastupdate int64
+}
 
 var (
 	monitor_interface string
 	server_address    string
+	mac_map           map[string]*macaddr
+	map_lock          *sync.Mutex
+	encoder           *gob.Encoder
+	client_channel    chan *Client
 )
 
 type afpacket struct {
@@ -27,6 +54,19 @@ type afpacket struct {
 func init() {
 	flag.StringVar(&monitor_interface, "i", "", "Network interface name to monitor")
 	flag.StringVar(&server_address, "s", "", "http server address")
+
+	mac_map = make(map[string]*macaddr, 128)
+	map_lock = new(sync.Mutex)
+	client_channel = make(chan *Client, 1024)
+}
+
+func ConnectServer() {
+	server_conn, err := net.DialTimeout("tcp", server_address, 3*time.Second)
+	if err != nil {
+		log.Println("failed connect to server:", err)
+		return
+	}
+	encoder = gob.NewEncoder(server_conn)
 }
 
 func CheckFlags() {
@@ -34,6 +74,11 @@ func CheckFlags() {
 
 	if monitor_interface == "" {
 		fmt.Println("need network interface name")
+		goto EXIT
+	}
+
+	if server_address == "" {
+		fmt.Println("need server address")
 		goto EXIT
 	}
 
@@ -96,6 +141,46 @@ func (d *afpacket) Read(to []byte) error {
 	return nil
 }
 
+func ClientSender() {
+	ConnectServer()
+
+	for {
+		if encoder != nil {
+			client := <-client_channel
+			err := encoder.Encode(client)
+			if err != nil {
+				log.Println("send data to server failed:", err)
+				ConnectServer()
+			}
+		} else {
+			time.Sleep(1 * time.Second)
+			ConnectServer()
+		}
+	}
+}
+
+func CheckExipreMAC() {
+	for {
+
+		map_lock.Lock()
+		for mac_str, mac_client := range mac_map {
+			now := time.Now().Unix()
+			if now-mac_client.Lastupdate > MAC_ADDR_EXPIRE {
+				delete(mac_map, mac_str)
+				log.Printf("MAC: %s has left\n", mac_str)
+				err := encoder.Encode(NewClient(mac_client.Addr, 0, "", 2))
+				if err != nil {
+					log.Println("send data to server failed:", err)
+					ConnectServer()
+				}
+			}
+		}
+		map_lock.Unlock()
+
+		time.Sleep(5 * time.Second)
+	}
+}
+
 func HandleFrame(frame []byte) {
 	lens := int(frame[2])
 	defer func() {
@@ -123,7 +208,24 @@ func HandleFrame(frame []byte) {
 		ssi_signal := 256 - int(frame[30])
 		mac_str := fmt.Sprintf("%x:%x:%x:%x:%x:%x", int(mac[0]), int(mac[1]), int(mac[2]), int(mac[3]), int(mac[4]), int(mac[5]))
 		ssid_str := string(ssid)
-		fmt.Printf("MAC: %s, SSID: %s SSI: -%d\n", mac_str, ssid_str, ssi_signal)
+		//fmt.Printf("MAC: %s, SSID: %s SSI: -%d\n", mac_str, ssid_str, ssi_signal)
+
+		now := time.Now().Unix()
+
+		map_lock.Lock()
+		defer map_lock.Unlock()
+
+		mac_client, ok := mac_map[mac_str]
+		if ok == true {
+			mac_client.Lastupdate = now
+		} else {
+			mac_client := new(macaddr)
+			mac_client.Addr = mac_str
+			mac_client.Lastupdate = time.Now().Unix()
+			mac_map[mac_str] = mac_client
+			log.Printf("MAC: %s has join\n", mac_str)
+			client_channel <- NewClient(mac_str, ssi_signal, ssid_str, 1)
+		}
 	}
 }
 
@@ -141,6 +243,9 @@ func main() {
 		log.Println(err)
 		return
 	}
+
+	go CheckExipreMAC()
+	go ClientSender()
 
 	frame := make([]byte, 2048)
 	for {
