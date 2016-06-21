@@ -42,10 +42,10 @@ func main() {
 	}
 
 	encoder := gob.NewEncoder(conn)
-	//mac := ReadFileContent(MAC_ADDRESS_PATH)
-	//uptime := ReadFileContent(UPTIME_PATH)
-	mac := "123123132"
-	uptime := "12731792387"
+	mac := ReadFileContent(MAC_ADDRESS_PATH)
+	uptime := ReadFileContent(UPTIME_PATH)
+	//mac := "123123132"
+	//uptime := "12731792387"
 	encoder.Encode(&Client{mac, uptime})
 	conn.Close()
 }
