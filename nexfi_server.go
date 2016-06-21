@@ -34,7 +34,7 @@ func HandleConnection(conn net.Conn) {
 
 func main() {
 	if len(os.Args) <= 1 {
-		log.Println("need server address argument.")
+		log.Println("need listen address argument.")
 		return
 	}
 
