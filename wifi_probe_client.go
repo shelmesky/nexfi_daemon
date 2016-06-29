@@ -3,7 +3,7 @@
 package main
 
 import (
-    "encoding/binary"
+	"encoding/binary"
 	"encoding/gob"
 	"flag"
 	"fmt"
@@ -19,7 +19,7 @@ import (
 
 const (
 	MAC_ADDR_EXPIRE = 90
-    DEBUG = false
+	DEBUG           = false
 )
 
 type Client struct {
@@ -169,9 +169,9 @@ func CheckExipreMAC() {
 			now := time.Now().Unix()
 			if now-mac_client.Lastupdate > MAC_ADDR_EXPIRE {
 				delete(mac_map, mac_str)
-                if DEBUG {
-				    log.Printf("MAC: %s has left\n", mac_str)
-                }
+				if DEBUG {
+					log.Printf("MAC: %s has left\n", mac_str)
+				}
 				err := encoder.Encode(NewClient(mac_client.Addr, 0, "", 2))
 				if err != nil {
 					log.Println("send data to server failed:", err)
@@ -212,9 +212,9 @@ func HandleFrame(frame []byte) {
 		ssi_signal := 256 - int(frame[30])
 		mac_str := fmt.Sprintf("%x:%x:%x:%x:%x:%x", int(mac[0]), int(mac[1]), int(mac[2]), int(mac[3]), int(mac[4]), int(mac[5]))
 		ssid_str := string(ssid)
-        if DEBUG {
-		    fmt.Printf("MAC: %s, SSID: %s SSI: -%d\n", mac_str, ssid_str, ssi_signal)
-        }
+		if DEBUG {
+			fmt.Printf("MAC: %s, SSID: %s SSI: -%d\n", mac_str, ssid_str, ssi_signal)
+		}
 
 		now := time.Now().Unix()
 
@@ -229,56 +229,58 @@ func HandleFrame(frame []byte) {
 			mac_client.Addr = mac_str
 			mac_client.Lastupdate = time.Now().Unix()
 			mac_map[mac_str] = mac_client
-            if DEBUG {
-			    log.Printf("MAC: %s has join\n", mac_str)
-            }
+			if DEBUG {
+				log.Printf("MAC: %s has join\n", mac_str)
+			}
 			client_channel <- NewClient(mac_str, ssi_signal, ssid_str, 1)
 		}
 	}
 
-    // plain http request
-    if frame[lens] == 0x88 {
-        qos_data_frame := 26
-        llc_frame_start := lens + qos_data_frame
+	// plain http request
+	if frame[lens] == 0x88 {
+		qos_data_frame := 26
+		llc_frame_start := lens + qos_data_frame
 
-        // llc frame
-        if frame[llc_frame_start] == 0xaa && frame[llc_frame_start+1] == 0xaa {
+		// llc frame
+		if frame[llc_frame_start] == 0xaa && frame[llc_frame_start+1] == 0xaa {
 
-            // ip frame
-            if frame[llc_frame_start + 6] == 0x08 && frame[llc_frame_start+7] == 0x00 {
+			// ip frame
+			if frame[llc_frame_start+6] == 0x08 && frame[llc_frame_start+7] == 0x00 {
 
-                llc_frame := 8
-                ip_frame_start := lens + qos_data_frame + llc_frame
+				llc_frame := 8
+				ip_frame_start := lens + qos_data_frame + llc_frame
 
-                // ip frame is version 4 and head length is 20 bytes
-                if frame[ip_frame_start] == 0x45 {
+				// ip frame is version 4 and head length is 20 bytes
+				if frame[ip_frame_start] == 0x45 {
 
-                    // ip frame contains tcp frame
-                    if frame[ip_frame_start+9] == 0x06 {
+					// ip frame contains tcp frame
+					if frame[ip_frame_start+9] == 0x06 {
 
-                        ip_frame_payload := frame[ip_frame_start+2 : ip_frame_start+4]
-                        ip_frame_payload_size := uint16(binary.BigEndian.Uint16(ip_frame_payload))
+						// payload size with tcp and data
+						ip_frame_payload := frame[ip_frame_start+2 : ip_frame_start+4]
+						ip_frame_payload_size := uint16(binary.BigEndian.Uint16(ip_frame_payload))
 
-                        ip_frame_head_lens := int(frame[ip_frame_start] & 0x0F)
+						// ip frame head size
+						ip_frame_head_lens := int(frame[ip_frame_start] & 0x0F)
 
-                        tcp_frame_start := ip_frame_start + (ip_frame_head_lens*4)
-                        http_frame_start := tcp_frame_start + 32
+						tcp_frame_start := ip_frame_start + (ip_frame_head_lens * 4)
+						http_frame_start := tcp_frame_start + 32
 
-                        //log.Printf("%x\n", frame[http_frame_start+12])
+						//log.Printf("%x\n", frame[tcp_frame_start+12])
 
-                        //http get frame
-                        if frame[http_frame_start] == 0x47 &&
-                            frame[http_frame_start+1] == 0x45 &&
-                            frame[http_frame_start+2] == 0x54 {
+						//http get request
+						if frame[http_frame_start] == 0x47 &&
+							frame[http_frame_start+1] == 0x45 &&
+							frame[http_frame_start+2] == 0x54 {
 
-                            http_frame_size := int(ip_frame_payload_size - 32 - 20)
-                            log.Printf("%s\n", frame[http_frame_start : http_frame_start + http_frame_size])
-                        }
-                    }
-                }
-            }
-        }
-    }
+							http_frame_size := int(ip_frame_payload_size - 32 - 20)
+							log.Printf("%s\n", frame[http_frame_start:http_frame_start+http_frame_size])
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 func main() {
