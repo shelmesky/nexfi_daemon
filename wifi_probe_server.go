@@ -95,6 +95,7 @@ func HandleConnection(conn net.Conn) {
 		}
 		if err != nil {
 			log.Println("decode network data failed:", err)
+            conn.Close()
 			break
 		}
 		log.Println("got client data:", client)
