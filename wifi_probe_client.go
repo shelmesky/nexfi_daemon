@@ -301,7 +301,7 @@ func main() {
 	go CheckExipreMAC()
 	go ClientSender()
 
-	frame := make([]byte, 4096)
+	frame := make([]byte, 1500)
 	for {
 		err := dev.Read(frame)
 		if err != nil {
