@@ -173,11 +173,7 @@ func CheckExipreMAC() {
 				if DEBUG {
 					log.Printf("MAC: %s has left\n", mac_str)
 				}
-				err := encoder.Encode(NewClient(mac_client.Addr, 0, "", 2))
-				if err != nil {
-					log.Println("send data to server failed:", err)
-					ConnectServer()
-				}
+				client_channel <- NewClient(mac_client.Addr, 0, "", 2)
 			}
 		}
 		map_lock.Unlock()
