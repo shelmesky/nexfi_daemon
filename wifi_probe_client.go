@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	MAC_ADDR_EXPIRE = 90
-	DEBUG           = false
+	MAC_ADDR_EXPIRE     = 90
+	DEBUG               = true
+    ENABLE_HTTP_SNIFF   = false
 )
 
 type Client struct {
@@ -237,7 +238,7 @@ func HandleFrame(frame []byte) {
 	}
 
 	// plain http request
-	if frame[lens] == 0x88 {
+	if frame[lens] == 0x88 && ENABLE_HTTP_SNIFF {
 		qos_data_frame := 26
 		llc_frame_start := lens + qos_data_frame
 
