@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"os"
 	"time"
 )
 
@@ -49,6 +48,8 @@ func (this *Client) Insert(table_name string) {
 	stmtIns, err := db.Prepare(sql)
 	if err != nil {
 		log.Println("can not do db.Prepare:", err)
+        log.Println("reconnect to mysql")
+        ConnectMysql()
 		return
 	}
 	defer stmtIns.Close()
@@ -58,6 +59,8 @@ func (this *Client) Insert(table_name string) {
 	_, err = stmtIns.Exec(nil, this.Addr, this.RSSI, this.SSID, this.Action, now_timestamp, now_timestring)
 	if err != nil {
 		log.Println("can not do stmt.Exec:", err)
+        log.Println("reconnect to mysql")
+        ConnectMysql()
 	}
 }
 
@@ -70,13 +73,13 @@ func ConnectMysql() {
 	db, err = sql.Open("mysql", host_info)
 	if err != nil {
 		log.Println("failed connect to mysql:", err)
-		os.Exit(1)
+        return
 	}
 
 	err = db.Ping()
 	if err != nil {
 		log.Println("failed ping mysql server:", err)
-		os.Exit(1)
+        return
 	}
 }
 
