@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	MAC_ADDR_EXPIRE     = 90
-	DEBUG               = true
-    ENABLE_HTTP_SNIFF   = false
+	MAC_ADDR_EXPIRE   = 90
+	DEBUG             = true
+	ENABLE_HTTP_SNIFF = false
 )
 
 type Client struct {
