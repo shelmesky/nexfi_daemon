@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	MAC_ADDR_EXPIRE     = 90
-	DEBUG               = true
+	MAC_ADDR_EXPIRE     = 60
+	DEBUG               = false
     ENABLE_HTTP_SNIFF   = false
 )
 
@@ -46,6 +46,7 @@ var (
 	map_lock          *sync.Mutex
 	encoder           *gob.Encoder
 	client_channel    chan *Client
+    server_conn       net.Conn
 )
 
 type afpacket struct {
@@ -64,7 +65,13 @@ func init() {
 }
 
 func ConnectServer() {
-	server_conn, err := net.DialTimeout("tcp", server_address, 3*time.Second)
+    var err error
+
+    if server_conn != nil {
+        server_conn.Close()
+    }
+
+	server_conn, err = net.DialTimeout("tcp", server_address, 3*time.Second)
 	if err != nil {
 		log.Println("failed connect to server:", err)
 		return
