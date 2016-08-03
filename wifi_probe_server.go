@@ -26,6 +26,7 @@ var (
 )
 
 type Client struct {
+	NodeID string
 	Addr   string
 	RSSI   int
 	SSID   string
@@ -44,7 +45,7 @@ func init() {
 }
 
 func (this *Client) Insert(table_name string) {
-	sql := fmt.Sprintf("INSERT INTO %s VALUES(?, ?, ?, ?, ?, ?, ?)", table_name)
+	sql := fmt.Sprintf("INSERT INTO %s VALUES(?, ?, ?, ?, ?, ?, ?, ?)", table_name)
 	stmtIns, err := db.Prepare(sql)
 	if err != nil {
 		log.Println("can not do db.Prepare:", err)
@@ -56,7 +57,8 @@ func (this *Client) Insert(table_name string) {
 
 	now_timestamp := time.Now().Unix()
 	now_timestring := time.Now().Format("2006-01-02 15:04:05")
-	_, err = stmtIns.Exec(nil, this.Addr, this.RSSI, this.SSID, this.Action, now_timestamp, now_timestring)
+	_, err = stmtIns.Exec(nil, this.NodeID, this.Addr, this.RSSI, this.SSID, this.Action,
+		now_timestamp, now_timestring)
 	if err != nil {
 		log.Println("can not do stmt.Exec:", err)
 		log.Println("reconnect to mysql")

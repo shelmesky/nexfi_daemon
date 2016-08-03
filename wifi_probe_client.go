@@ -7,10 +7,12 @@ import (
 	"encoding/gob"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -19,11 +21,17 @@ import (
 
 const (
 	MAC_ADDR_EXPIRE   = 60
-	DEBUG             = false
+	DEBUG             = true
 	ENABLE_HTTP_SNIFF = false
+	MAC_ADDRESS_PATH  = "/sys/devices/platform/ar933x_wmac/net/wlan0/phy80211/macaddress"
+)
+
+var (
+	NODE_ID string
 )
 
 type Client struct {
+	NodeID string
 	Addr   string
 	RSSI   int
 	SSID   string
@@ -31,7 +39,7 @@ type Client struct {
 }
 
 func NewClient(addr string, rssi int, ssid string, action int) *Client {
-	return &Client{addr, rssi, ssid, action}
+	return &Client{NODE_ID, addr, rssi, ssid, action}
 }
 
 type macaddr struct {
@@ -62,6 +70,18 @@ func init() {
 	mac_map = make(map[string]*macaddr, 128)
 	map_lock = new(sync.Mutex)
 	client_channel = make(chan *Client, 1024)
+
+	NODE_ID = ReadNodeID()
+}
+
+func ReadNodeID() (ret string) {
+	data, err := ioutil.ReadFile(MAC_ADDRESS_PATH)
+	if err != nil {
+		log.Println("read mac address failed:", err)
+		return
+	}
+
+	return strings.Trim(string(data), "\n")
 }
 
 func ConnectServer() {
