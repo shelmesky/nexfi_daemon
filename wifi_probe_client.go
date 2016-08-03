@@ -20,10 +20,12 @@ import (
 )
 
 const (
-	MAC_ADDR_EXPIRE   = 60
-	DEBUG             = true
-	ENABLE_HTTP_SNIFF = false
-	MAC_ADDRESS_PATH  = "/sys/devices/platform/ar933x_wmac/net/wlan0/phy80211/macaddress"
+	MAC_ADDR_EXPIRE      = 60
+	DEBUG                = true
+	ENABLE_HTTP_SNIFF    = false
+	ENABLE_BEACON_FRAME  = false
+	ENABLE_PROBE_REQUEST = true
+	MAC_ADDRESS_PATH     = "/sys/devices/platform/ar933x_wmac/net/wlan0/phy80211/macaddress"
 )
 
 var (
@@ -219,18 +221,16 @@ func HandleFrame(frame []byte) {
 	}()
 
 	// beacon frame
-	/*
-		if frame[lens] == 0x80 {
-			mac := frame[lens+10 : lens+16]
-			ssid := frame[lens+38 : (lens + 38 + int(frame[lens+37]))]
-			mac_str := fmt.Sprintf("%x:%x:%x:%x:%x:%x", int(mac[0]), int(mac[1]), int(mac[2]), int(mac[3]), int(mac[4]), int(mac[5]))
-			ssid_str := string(ssid)
-			fmt.Printf("MAC: %s, SSID: %s\n", mac_str, ssid_str)
-		}
-	*/
+	if frame[lens] == 0x80 && ENABLE_BEACON_FRAME {
+		mac := frame[lens+10 : lens+16]
+		ssid := frame[lens+38 : (lens + 38 + int(frame[lens+37]))]
+		mac_str := fmt.Sprintf("%x:%x:%x:%x:%x:%x", int(mac[0]), int(mac[1]), int(mac[2]), int(mac[3]), int(mac[4]), int(mac[5]))
+		ssid_str := string(ssid)
+		fmt.Printf("MAC: %s, SSID: %s\n", mac_str, ssid_str)
+	}
 
 	// probe request frame
-	if frame[lens] == 0x40 {
+	if frame[lens] == 0x40 && ENABLE_PROBE_REQUEST {
 		mac := frame[lens+10 : lens+16]
 		ssid := frame[lens+26 : (lens + 26 + int(frame[lens+25]))]
 		ssi_signal := 256 - int(frame[30])
