@@ -212,8 +212,10 @@ func CheckExipreMAC() {
 	}
 }
 
-func UpdateClientBrower(browser_agent string) {
-	Log.Println(browser_agent)
+func UpdateClientBrower(mac_str, browser_agent string) {
+	if strings.Contains(browser_agent, "iPhone") {
+		Log.Printf("MAC: %s is iPhone", mac_str)
+	}
 }
 
 func HandleFrame(frame []byte) {
@@ -267,6 +269,9 @@ func HandleFrame(frame []byte) {
 
 	// plain http request
 	if frame[lens] == 0x88 && ENABLE_HTTP_SNIFF {
+		mac := frame[lens+10 : lens+16]
+		mac_str := fmt.Sprintf("%x:%x:%x:%x:%x:%x", int(mac[0]), int(mac[1]), int(mac[2]), int(mac[3]), int(mac[4]), int(mac[5]))
+
 		qos_data_frame := 26
 		llc_frame_start := lens + qos_data_frame
 
@@ -311,7 +316,7 @@ func HandleFrame(frame []byte) {
 							for idx := range http_head {
 								http_head_item := http_head[idx]
 								if strings.HasPrefix(http_head_item, "User-Agent") {
-									UpdateClientBrower(http_head_item)
+									UpdateClientBrower(mac_str, http_head_item)
 								}
 							}
 						}
