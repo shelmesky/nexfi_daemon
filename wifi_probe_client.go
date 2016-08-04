@@ -22,14 +22,15 @@ import (
 const (
 	MAC_ADDR_EXPIRE      = 60
 	DEBUG                = true
-	ENABLE_HTTP_SNIFF    = false
+	ENABLE_HTTP_SNIFF    = true
 	ENABLE_BEACON_FRAME  = false
-	ENABLE_PROBE_REQUEST = true
+	ENABLE_PROBE_REQUEST = false
 	MAC_ADDRESS_PATH     = "/sys/devices/platform/ar933x_wmac/net/wlan0/phy80211/macaddress"
 )
 
 var (
 	NODE_ID string
+	Log     = log.New(os.Stdout, "Prober: ", log.Ldate|log.Ltime|log.Lshortfile)
 )
 
 type Client struct {
@@ -79,7 +80,7 @@ func init() {
 func ReadNodeID() (ret string) {
 	data, err := ioutil.ReadFile(MAC_ADDRESS_PATH)
 	if err != nil {
-		log.Println("read mac address failed:", err)
+		Log.Println("read mac address failed:", err)
 		return
 	}
 
@@ -95,7 +96,7 @@ func ConnectServer() {
 
 	server_conn, err = net.DialTimeout("tcp", server_address, 3*time.Second)
 	if err != nil {
-		log.Println("failed connect to server:", err)
+		Log.Println("failed connect to server:", err)
 		return
 	}
 	encoder = gob.NewEncoder(server_conn)
@@ -161,7 +162,7 @@ func (d *afpacket) Close() error {
 func (d *afpacket) Read(to []byte) error {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Println(err)
+			Log.Println(err)
 			debug.PrintStack()
 		}
 	}()
@@ -181,7 +182,7 @@ func ClientSender() {
 			client := <-client_channel
 			err := encoder.Encode(client)
 			if err != nil {
-				log.Println("send data to server failed:", err)
+				Log.Println("send data to server failed:", err)
 				ConnectServer()
 			}
 		} else {
@@ -200,7 +201,7 @@ func CheckExipreMAC() {
 			if now-mac_client.Lastupdate > MAC_ADDR_EXPIRE {
 				delete(mac_map, mac_str)
 				if DEBUG {
-					log.Printf("MAC: %s has left\n", mac_str)
+					Log.Printf("MAC: %s has left\n", mac_str)
 				}
 				client_channel <- NewClient(mac_client.Addr, 0, "", 2)
 			}
@@ -211,11 +212,15 @@ func CheckExipreMAC() {
 	}
 }
 
+func UpdateClientBrower(browser_agent string) {
+	Log.Println(browser_agent)
+}
+
 func HandleFrame(frame []byte) {
 	lens := int(frame[2])
 	defer func() {
 		if err := recover(); err != nil {
-			log.Println(err)
+			Log.Println(err)
 			debug.PrintStack()
 		}
 	}()
@@ -254,7 +259,7 @@ func HandleFrame(frame []byte) {
 			mac_client.Lastupdate = time.Now().Unix()
 			mac_map[mac_str] = mac_client
 			if DEBUG {
-				log.Printf("MAC: %s has join\n", mac_str)
+				Log.Printf("MAC: %s has join\n", mac_str)
 			}
 			client_channel <- NewClient(mac_str, ssi_signal, ssid_str, 1)
 		}
@@ -290,15 +295,25 @@ func HandleFrame(frame []byte) {
 						tcp_frame_start := ip_frame_start + (ip_frame_head_lens * 4)
 						http_frame_start := tcp_frame_start + 32
 
-						//log.Printf("%x\n", frame[tcp_frame_start+12])
+						//Log.Printf("%x\n", frame[tcp_frame_start+12])
 
 						//http get request
 						if frame[http_frame_start] == 0x47 &&
 							frame[http_frame_start+1] == 0x45 &&
-							frame[http_frame_start+2] == 0x54 {
+							frame[http_frame_start+2] == 0x54 &&
+							// if packet size of ip frame paylod is more than 1024
+							// or less than 64, we ignore it.
+							ip_frame_payload_size < 1024 &&
+							ip_frame_payload_size > 64 {
 
 							http_frame_size := int(ip_frame_payload_size - 32 - 20)
-							log.Printf("%s\n", frame[http_frame_start:http_frame_start+http_frame_size])
+							http_head := strings.Split(string(frame[http_frame_start:http_frame_start+http_frame_size]), "\r\n")
+							for idx := range http_head {
+								http_head_item := http_head[idx]
+								if strings.HasPrefix(http_head_item, "User-Agent") {
+									UpdateClientBrower(http_head_item)
+								}
+							}
 						}
 					}
 				}
@@ -312,13 +327,13 @@ func main() {
 
 	iface, err := net.InterfaceByName(monitor_interface)
 	if err != nil {
-		log.Println(err)
+		Log.Println(err)
 		return
 	}
 
 	dev, err := newDev(iface)
 	if err != nil {
-		log.Println(err)
+		Log.Println(err)
 		return
 	}
 
@@ -329,7 +344,7 @@ func main() {
 	for {
 		err := dev.Read(frame)
 		if err != nil {
-			log.Println(err)
+			Log.Println(err)
 			continue
 		}
 		HandleFrame(frame)
