@@ -24,7 +24,7 @@ const (
 	DEBUG                = true
 	ENABLE_HTTP_SNIFF    = true
 	ENABLE_BEACON_FRAME  = false
-	ENABLE_PROBE_REQUEST = false
+	ENABLE_PROBE_REQUEST = true
 	MAC_ADDRESS_PATH     = "/sys/devices/platform/ar933x_wmac/net/wlan0/phy80211/macaddress"
 )
 
