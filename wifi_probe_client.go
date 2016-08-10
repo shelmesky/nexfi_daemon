@@ -36,13 +36,21 @@ var (
 type Client struct {
 	NodeID string
 	Addr   string
+	Mode   string
 	RSSI   int
 	SSID   string
 	Action int
 }
 
 func NewClient(addr string, rssi int, ssid string, action int) *Client {
-	return &Client{NODE_ID, addr, rssi, ssid, action}
+	client_model_map_lock.RLock()
+	defer client_model_map_lock.RUnlock()
+
+	if model, ok := client_model_map[addr]; ok {
+		return &Client{NODE_ID, addr, model, rssi, ssid, action}
+	} else {
+		return &Client{NODE_ID, addr, "", rssi, ssid, action}
+	}
 }
 
 type macaddr struct {
@@ -51,13 +59,15 @@ type macaddr struct {
 }
 
 var (
-	monitor_interface string
-	server_address    string
-	mac_map           map[string]*macaddr
-	map_lock          *sync.Mutex
-	encoder           *gob.Encoder
-	client_channel    chan *Client
-	server_conn       net.Conn
+	monitor_interface     string
+	server_address        string
+	mac_map               map[string]*macaddr
+	map_lock              *sync.Mutex
+	encoder               *gob.Encoder
+	client_channel        chan *Client
+	server_conn           net.Conn
+	client_model_map      map[string]string
+	client_model_map_lock *sync.RWMutex
 )
 
 type afpacket struct {
@@ -73,6 +83,9 @@ func init() {
 	mac_map = make(map[string]*macaddr, 128)
 	map_lock = new(sync.Mutex)
 	client_channel = make(chan *Client, 1024)
+
+	client_model_map = make(map[string]string, 128)
+	client_model_map_lock = new(sync.RWMutex)
 
 	NODE_ID = ReadNodeID()
 }
@@ -213,8 +226,11 @@ func CheckExipreMAC() {
 }
 
 func UpdateClientBrower(mac_str, browser_agent string) {
+	client_model_map_lock.Lock()
+	defer client_model_map_lock.Unlock()
+
 	if strings.Contains(browser_agent, "iPhone") {
-		Log.Printf("MAC: %s is iPhone", mac_str)
+		client_model_map[mac_str] = "iPhone"
 	}
 }
 
