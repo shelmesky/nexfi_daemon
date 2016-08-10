@@ -99,6 +99,7 @@ func HandleConnection(conn net.Conn) {
 	decoder := gob.NewDecoder(conn)
 	for {
 		client := client_pool.Get().(*Client)
+		client.Model = ""
 		err := decoder.Decode(client)
 		if err == io.EOF {
 			log.Println("connection close")
