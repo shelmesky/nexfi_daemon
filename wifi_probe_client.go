@@ -307,6 +307,7 @@ func HandleFrame(frame []byte) {
 	if frame[lens] == 0x88 && ENABLE_HTTP_SNIFF {
 		mac := frame[lens+10 : lens+16]
 		mac_str := fmt.Sprintf("%x:%x:%x:%x:%x:%x", int(mac[0]), int(mac[1]), int(mac[2]), int(mac[3]), int(mac[4]), int(mac[5]))
+		ssi_signal := 256 - int(frame[30])
 
 		qos_data_frame := 26
 		llc_frame_start := lens + qos_data_frame
@@ -353,6 +354,21 @@ func HandleFrame(frame []byte) {
 								http_head_item := http_head[idx]
 								if strings.HasPrefix(http_head_item, "User-Agent") {
 									UpdateClientBrower(mac_str, http_head_item)
+
+									map_lock.Lock()
+									defer map_lock.Unlock()
+
+									now := time.Now().Unix()
+									mac_client, ok := mac_map[mac_str]
+									if ok == true {
+										mac_client.Lastupdate = now
+									} else {
+										client_channel <- NewClient(mac_str, ssi_signal, "", 1)
+										mac_client := new(macaddr)
+										mac_client.Addr = mac_str
+										mac_client.Lastupdate = time.Now().Unix()
+										mac_map[mac_str] = mac_client
+									}
 								}
 							}
 						}
