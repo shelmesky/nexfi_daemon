@@ -48,6 +48,12 @@ func NewClient(addr string, rssi int, ssid string, action int) *Client {
 
 	client := client_pool.Get().(*Client)
 
+	client.NodeID = NODE_ID
+	client.Addr = addr
+	client.RSSI = rssi
+	client.SSID = ssid
+	client.Action = action
+
 	if model, ok := client_model_map[addr]; ok {
 		client.Model = model
 	} else {
@@ -242,6 +248,9 @@ func UpdateClientBrower(mac_str, browser_agent string) {
 
 	if strings.Contains(browser_agent, "iPhone") {
 		client_model_map[mac_str] = "iPhone"
+		if DEUBG {
+			Log.Printf("%s is iPhone\n", mac_str)
+		}
 	}
 }
 
