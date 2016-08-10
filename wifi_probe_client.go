@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	MAC_ADDR_EXPIRE      = 60
+	MAC_ADDR_EXPIRE      = 30
 	DEBUG                = true
 	ENABLE_HTTP_SNIFF    = true
 	ENABLE_BEACON_FRAME  = false
