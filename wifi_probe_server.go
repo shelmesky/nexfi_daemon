@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -23,6 +24,8 @@ var (
 	mysql_table    string
 
 	listen_addr string
+
+	client_pool *sync.Pool
 )
 
 type Client struct {
@@ -43,6 +46,12 @@ func init() {
 	flag.StringVar(&mysql_table, "mysql_table", "mysql", "mysql server table name")
 
 	flag.StringVar(&listen_addr, "listen_addr", "0.0.0.0:15076", "server listen host and port")
+
+	client_pool = &sync.Pool{
+		New: func() interface{} {
+			return new(Client)
+		},
+	}
 }
 
 func (this *Client) Insert(table_name string) {
@@ -89,7 +98,7 @@ func ConnectMysql() {
 func HandleConnection(conn net.Conn) {
 	decoder := gob.NewDecoder(conn)
 	for {
-		client := new(Client)
+		client := client_pool.Get().(*Client)
 		err := decoder.Decode(client)
 		if err == io.EOF {
 			log.Println("connection close")
@@ -103,6 +112,7 @@ func HandleConnection(conn net.Conn) {
 		}
 		log.Println("got client data:", client)
 		client.Insert(mysql_table)
+		client_pool.Put(client)
 	}
 }
 
