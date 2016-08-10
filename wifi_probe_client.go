@@ -248,7 +248,7 @@ func UpdateClientBrower(mac_str, browser_agent string) {
 
 	if strings.Contains(browser_agent, "iPhone") {
 		client_model_map[mac_str] = "iPhone"
-		if DEUBG {
+		if DEBUG {
 			Log.Printf("%s is iPhone\n", mac_str)
 		}
 	}
