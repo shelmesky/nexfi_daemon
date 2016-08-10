@@ -36,7 +36,7 @@ var (
 type Client struct {
 	NodeID string
 	Addr   string
-	Mode   string
+	Model  string
 	RSSI   int
 	SSID   string
 	Action int
@@ -46,11 +46,14 @@ func NewClient(addr string, rssi int, ssid string, action int) *Client {
 	client_model_map_lock.RLock()
 	defer client_model_map_lock.RUnlock()
 
+	client := client_pool.Get().(*Client)
+
 	if model, ok := client_model_map[addr]; ok {
-		return &Client{NODE_ID, addr, model, rssi, ssid, action}
+		client.Model = model
 	} else {
-		return &Client{NODE_ID, addr, "", rssi, ssid, action}
+		client.Model = ""
 	}
+	return client
 }
 
 type macaddr struct {
@@ -68,6 +71,7 @@ var (
 	server_conn           net.Conn
 	client_model_map      map[string]string
 	client_model_map_lock *sync.RWMutex
+	client_pool           *sync.Pool
 )
 
 type afpacket struct {
@@ -83,6 +87,12 @@ func init() {
 	mac_map = make(map[string]*macaddr, 128)
 	map_lock = new(sync.Mutex)
 	client_channel = make(chan *Client, 1024)
+
+	client_pool = &sync.Pool{
+		New: func() interface{} {
+			return new(Client)
+		},
+	}
 
 	client_model_map = make(map[string]string, 128)
 	client_model_map_lock = new(sync.RWMutex)
@@ -198,6 +208,7 @@ func ClientSender() {
 				Log.Println("send data to server failed:", err)
 				ConnectServer()
 			}
+			client_pool.Put(client)
 		} else {
 			time.Sleep(1 * time.Second)
 			ConnectServer()
