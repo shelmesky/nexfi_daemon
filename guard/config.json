@@ -1,1 +1,9 @@
-{"Script":"/root/nexfid.sh","File":"/root/key.sh","NIC":"br-lan"}
+{
+    "cmmand script":"/root/nexfid.sh",
+    "secret key file":"/root/key",
+    "nic interface":"br-lan",
+    "button message pipe":"/tmp/btnfifo",
+    "led message pipe":"/tmp/ledfifo"
+}
+
+
