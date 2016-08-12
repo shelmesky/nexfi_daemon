@@ -92,7 +92,16 @@ func ArgParse() *Configuration {
 	return config
 }
 
-type 
+type MessagePipe struct {
+	f os.File
+}
+
+func (pipe *MessagePipe) OpenPipe() {
+	f, err := os.OpenFile(config.GetBtnPipe(), os.O_RDWR, 0644)
+	if err != nil {
+		return
+	}
+}
 
 type GuardServer struct {
 	config *Configuration
@@ -171,12 +180,6 @@ func main() {
 	gs := GuardServer{config: config}
 	gs.Open()
 	defer gs.Close()
-
-	// open button pipe
-	f, err := os.OpenFile(config.GetBtnPipe(), os.O_RDWR, 0644)
-	if err != nil {
-		return
-	}
 
 	// read and handle messages from the button pipe
 	state := _s_normal
