@@ -1,12 +1,12 @@
 
-_Nexfi-Guard_   
-====================================================
+#_Nexfi-Guard_   
 for management and syncing secret key.  
-**nexfid 1.0.1**  
+____________________________________________________
+##**nexfid 1.0.1**  
 ____________________________________________________
 Basic usage:  
 guard -f filename   
 Options:  
 -f string  
-        The filename of configuration.  
+         The filename of configuration.  
 
