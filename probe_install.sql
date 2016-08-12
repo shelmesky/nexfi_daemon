@@ -4,6 +4,7 @@ CREATE TABLE `clients` (
       `id` int(11) NOT NULL AUTO_INCREMENT,
       `nodeid` varchar(128) NOT NULL,
       `addr` varchar(128) NOT NULL,
+      `from` varchar(128) NOT NULL,
       `model` varchar(128) NOT NULL,
       `rssi` int(11) NOT NULL,
       `ssid` varchar(128) DEFAULT NULL,

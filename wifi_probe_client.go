@@ -36,13 +36,14 @@ var (
 type Client struct {
 	NodeID string
 	Addr   string
+	From   string
 	Model  string
 	RSSI   int
 	SSID   string
 	Action int
 }
 
-func NewClient(addr string, rssi int, ssid string, action int) *Client {
+func NewClient(addr string, from string, rssi int, ssid string, action int) *Client {
 	client_model_map_lock.RLock()
 	defer client_model_map_lock.RUnlock()
 
@@ -50,6 +51,7 @@ func NewClient(addr string, rssi int, ssid string, action int) *Client {
 
 	client.NodeID = NODE_ID
 	client.Addr = addr
+	client.From = from
 	client.RSSI = rssi
 	client.SSID = ssid
 	client.Action = action
@@ -233,7 +235,7 @@ func CheckExipreMAC() {
 				if DEBUG {
 					Log.Printf("MAC: %s has left\n", mac_str)
 				}
-				client_channel <- NewClient(mac_client.Addr, 0, "", 2)
+				client_channel <- NewClient(mac_client.Addr, "leave", 0, "", 2)
 			}
 		}
 		map_lock.Unlock()
@@ -299,7 +301,7 @@ func HandleFrame(frame []byte) {
 			if DEBUG {
 				Log.Printf("MAC: %s has join\n", mac_str)
 			}
-			client_channel <- NewClient(mac_str, ssi_signal, ssid_str, 1)
+			client_channel <- NewClient(mac_str, "probe", ssi_signal, ssid_str, 1)
 		}
 	}
 
@@ -363,7 +365,7 @@ func HandleFrame(frame []byte) {
 									if ok == true {
 										mac_client.Lastupdate = now
 									} else {
-										client_channel <- NewClient(mac_str, ssi_signal, "", 1)
+										client_channel <- NewClient(mac_str, "sta", ssi_signal, "", 1)
 										mac_client := new(macaddr)
 										mac_client.Addr = mac_str
 										mac_client.Lastupdate = time.Now().Unix()
