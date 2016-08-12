@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	chy "guard/chanproxy"
 	"io/ioutil"
 	"os"
 	"time"
-	//"guard/chanproxy"
 	//"guard/control"
 	//"guard/message"
 	//"guard/secret"
@@ -24,6 +24,10 @@ const (
 	_msg_tbled_red_blink_off   = "tbled:red:blink:off"
 	_msg_tbled_green_blink_on  = "tbled:green:blink:on"
 	_msg_tbled_green_blink_off = "tbled:green:blink:off"
+)
+
+const (
+	_broadcast_mac_addr = "FF:FF:FF:FF:FF:FF"
 )
 
 /* configuration file for config some attr */
@@ -93,28 +97,50 @@ func ArgParse() *Configuration {
 }
 
 type MessagePipe struct {
-	f os.File
+	f *os.File
 }
 
-func (pipe *MessagePipe) OpenPipe() {
-	f, err := os.OpenFile(config.GetBtnPipe(), os.O_RDWR, 0644)
+func (pipe *MessagePipe) OpenPipe(filename string) (err error) {
+	pipe.f, err = os.OpenFile(filename, os.O_RDWR, 0644)
+	return err
+}
+
+func (pipe *MessagePipe) RecvMsg() (string, error) {
+	data := make([]byte, 1024)
+	n, err := pipe.f.Read(data)
 	if err != nil {
-		return
+		fmt.Println("button pipe read error: ", err)
+		return "", err
 	}
+
+	msg := string(data[:n-1])
+	return msg, err
+
+}
+
+func (pipe *MessagePipe) ClosePipe() {
+	pipe.f.Close()
+}
+
+type IChannel interface {
+	Send(data []byte) error
+	Recv() (payload []byte, err error)
 }
 
 type GuardServer struct {
 	config *Configuration
-	ch     chan int
-	isExit bool
+	chtran IChannel // channel for transmission
+	chsync chan int // channel for sync
+	isExit bool     // is exit?
 }
 
 func (guard *GuardServer) Open() {
-	ch := make(chan int, 1)
+	guard.chsync = make(chan int, 1)
 }
 
 func (guard *GuardServer) Close() {
-	close(ch)
+	guard.Stop()
+	close(guard.chsync)
 }
 
 func (guard *GuardServer) Start() {
@@ -126,36 +152,53 @@ func (guard *GuardServer) Start() {
 		time.Sleep(time.Second)
 		fmt.Println("Guard Server Run...............Server")
 	}
-	guard.ch <- 0
+	guard.chsync <- 0
 }
 
 func (guard *GuardServer) Stop() {
-	guard.isExit = true
-	<-guard.ch
+	if !guard.isExit {
+		guard.isExit = true
+		<-guard.chsync
+	}
 }
 
 type GuardClient struct {
 	config *Configuration
-	isExit bool
+	chtran IChannel // channel for transmission
+	chsync chan int // channel for sync
+	isExit bool     // is exit?
 }
 
-func (guard *GuardClient) Open() {}
+func (guard *GuardClient) Open() {
+	guard.chsync = make(chan int, 1)
+}
 
-func (guard *GuardClient) Close() {}
+func (guard *GuardClient) Close() {
+	guard.Stop()
+	close(guard.chsync)
+}
 
 func (guard *GuardClient) Start() {
 	for {
 		if guard.isExit {
 			break
 		}
-		time.Sleep(time.Second)
-		fmt.Println("Guard Client Run.............................Client")
+		payload, err := guard.chtran.Recv()
+		if err != nil {
+			fmt.Println(err)
+			time.Sleep(time.Second)
+			continue
+		}
+		fmt.Println("Guard Client Run Recv Data: ", string(payload))
 	}
-	guard.ch <- 0
+	guard.chsync <- 0
 }
 
 func (guard *GuardClient) Stop() {
-	<-gurad.ch
+	if !guard.isExit {
+		guard.isExit = true
+		<-guard.chsync
+	}
 }
 
 //func Exist(filename string) bool {
@@ -164,11 +207,20 @@ func (guard *GuardClient) Stop() {
 //}
 
 func main() {
-	// construct configration file
+	// parse configration file
 	config := ArgParse()
 	if config == nil {
 		return
 	}
+
+	// channel init
+	chproxy := chy.ChannelProxy{DesMac: _broadcast_mac_addr, NicInt: config.GetNIC()}
+	err := chproxy.Open()
+	if err != nil {
+		fmt.Println("open network interface: ", chproxy.GetNicInt(), " err: ", err)
+		return
+	}
+	defer chproxy.Close()
 
 	// guard client for recving and handling the key sync message
 	gc := GuardClient{config: config}
@@ -182,33 +234,44 @@ func main() {
 	defer gs.Close()
 
 	// read and handle messages from the button pipe
+	btnpip := MessagePipe{}
+	err = btnpip.OpenPipe(config.GetBtnPipe())
+	if err != nil {
+		fmt.Println("open button pipe error: ", err)
+		return
+	}
+	defer btnpip.ClosePipe()
+
+	// simple state switch
 	state := _s_normal
-	data := make([]byte, 1024)
 
 	for {
-		n, err := f.Read(buf)
+		msg, err := btnpip.RecvMsg()
 		if err != nil {
-			return
-		}
+			fmt.Println("read button pipe error: ", err)
+		} else {
+			switch msg {
+			case _msg_btn0_pressed_long:
+				switch state {
+				case _s_normal:
+					gc.Stop()
+					go gs.Start()
+					state = _s_keysync
+				case _s_keysync:
+					gs.Stop()
+					go gc.Start()
+					state = _s_normal
+				default:
 
-		msg := string(data[:n-1])
-		switch msg {
-		case _msg_btn0_pressed_long:
-			switch state {
-			case _s_normal:
-				go gs.Start()
-				state = _s_keysync
-			case _s_keysync:
-				gs.Stop()
-				state = _s_normal
+				}
 			default:
+				fmt.Println("message format error from button pipe.")
 
 			}
-		default:
-			fmt.Println("message format error from button pipe.")
-
 		}
 	}
+	gc.Stop()
+	gs.Stop()
 }
 
 // check configuration option

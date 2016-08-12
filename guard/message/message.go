@@ -6,7 +6,7 @@ import (
 
 /* payload size don't include message header */
 const (
-	MAX_MSG_PAYLOAD_SEZE = 1024
+	MAX_MSG_PAYLOAD_SEZE = 1000
 )
 
 /* message type */

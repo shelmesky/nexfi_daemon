@@ -1,13 +1,11 @@
-// +build linux
-
 package chanproxy
 
 import (
 	"bytes"
 	"flag"
-	"fmt"
+	//"fmt"
 	"net"
-	"os"
+	//"os"
 	"syscall"
 	"unsafe"
 )
