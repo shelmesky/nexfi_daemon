@@ -1,7 +1,7 @@
 package message
 
 import (
-	json "encoding/json"
+	"encoding/json"
 )
 
 /* payload size don't include message header */
@@ -30,54 +30,23 @@ type MessageHeader struct {
 	// MsgCRC    uint32 Message CRC code
 }
 
-func (msg *MessageHeader) GetMessageHeaderLen() int {
-	return 6
-}
-
-func (msg *MessageHeader) SetMsgType(msgtype uint8) {
-	msg.MsgType = msgtype
-}
-
-func (msg *MessageHeader) GetMsgType() uint8 {
-	return msg.MsgType
-}
-
-func (msg *MessageHeader) SetMsgID(msgid uint8) {
-	msg.MsgID = msgid
-}
-
-func (msg *MessageHeader) GetMsgID() uint8 {
-	return msg.MsgID
-}
-
-func (msg *MessageHeader) SetMsgSeq(msgseq uint16) {
-	msg.MsgSeq = msgseq
-}
-
-func (msg *MessageHeader) GetMsgSeq() uint16 {
-	return msg.MsgSeq
-}
-
-func (msg *MessageHeader) SetPayLen(msgpaylen uint16) {
-	msg.MsgPayLen = msgpaylen
-}
-
-func (msg *MessageHeader) GetMsgPayLen(msgpaylen uint16) {
-	return
-}
+func (msg *MessageHeader) GetMessageHeaderLen() int   { return 6 }
+func (msg *MessageHeader) SetMsgType(msgtype uint8)   { msg.MsgType = msgtype }
+func (msg *MessageHeader) GetMsgType() uint8          { return msg.MsgType }
+func (msg *MessageHeader) SetMsgID(msgid uint8)       { msg.MsgID = msgid }
+func (msg *MessageHeader) GetMsgID() uint8            { return msg.MsgID }
+func (msg *MessageHeader) SetMsgSeq(msgseq uint16)    { msg.MsgSeq = msgseq }
+func (msg *MessageHeader) GetMsgSeq() uint16          { return msg.MsgSeq }
+func (msg *MessageHeader) SetPayLen(msgpaylen uint16) { msg.MsgPayLen = msgpaylen }
+func (msg *MessageHeader) GetMsgPayLen() uint16       { return msg.MsgPayLen }
 
 type Message struct {
 	MsgHeader MessageHeader
 	Payload   []byte
 }
 
-func (msg *Message) GetPlayload() []byte {
-	return msg.Payload
-}
-
-func (msg *Message) SetPayload(payload []byte) {
-	msg.Payload = payload
-}
+func (msg *Message) GetPlayload() []byte       { return msg.Payload }
+func (msg *Message) SetPayload(payload []byte) { msg.Payload = payload }
 
 func (msg *Message) Marshal() ([]byte, error) {
 	return nil, nil

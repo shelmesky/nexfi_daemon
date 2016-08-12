@@ -39,3 +39,7 @@ func (c *ChannelProxy) Open() error {
 func (c *ChannelProxy) Recv() (payload []byte, err error) {
 	return c.DevNic.RecvFrame()
 }
+
+func CreateChannelProxy(desmac string, nicint string) *ChannelProxy {
+	return &ChannelProxy{DesMac: desmac, NicInt: nicint}
+}

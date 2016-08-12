@@ -2,41 +2,15 @@ package chanproxy
 
 import (
 	"bytes"
-	"flag"
-	//"fmt"
 	"net"
-	//"os"
 	"syscall"
 	"unsafe"
 )
 
 var (
-	nic_interface    string
-	dest_mac_address string
-	is_sender        bool
-	is_receiver      bool
-	content          string
-
 	MAX_PAYLOAD_SIZE int = 1024
 	ETHER_TYPE           = [2]byte{0x55, 0xaa}
 )
-
-func init() {
-	flag.StringVar(&nic_interface, "i", "", "network interface to send ethernet frame")
-	flag.StringVar(&nic_interface, "interface", "", "network interface to send ethernet frame")
-
-	flag.StringVar(&dest_mac_address, "t", "", "mac address of destination node")
-	flag.StringVar(&dest_mac_address, "to", "", "mac address of destination node")
-
-	flag.BoolVar(&is_sender, "s", false, "this is sender")
-	flag.BoolVar(&is_sender, "sender", false, "this is sender")
-
-	flag.BoolVar(&is_receiver, "r", false, "this is receiver")
-	flag.BoolVar(&is_receiver, "receiver", false, "this is receiver")
-
-	flag.StringVar(&content, "c", "", "string content to send")
-	flag.StringVar(&content, "-content", "", "string content to send")
-}
 
 // Ethertype is a type used represent the ethertype of an ethernet frame.
 // Defined as a 2-byte array, variables of this type are intended to be used as
@@ -290,70 +264,3 @@ func (d *afpacket) RecvFrame() (payload []byte, err error) {
 
 	return payload, err
 }
-
-/*func CheckFlags() {
-	flag.Parse()
-
-	if is_sender == false && is_receiver == false {
-		fmt.Println("must be sender or receiver.")
-		goto EXIT
-	}
-
-	if is_sender == true && is_receiver == true {
-		fmt.Println("can not be sender and receiver in same time.")
-		goto EXIT
-	}
-
-	if nic_interface == "" {
-		fmt.Println("Need interface name")
-		goto EXIT
-	}
-
-	if is_sender == true && dest_mac_address == "" {
-		fmt.Println("we are sender, but destination mac address is empty.")
-		goto EXIT
-	}
-
-	if is_sender == true && content == "" {
-		fmt.Println("Need content")
-		goto EXIT
-	}
-
-	return
-
-EXIT:
-	os.Exit(1)
-}
-
-func main() {
-	CheckFlags()
-
-	iface, err := net.InterfaceByName(nic_interface)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	dev, err := newDev(iface, nil, MAX_PAYLOAD_SIZE)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	if is_sender == true {
-		err = dev.SendFrame(dest_mac_address, []byte(content))
-		if err != nil {
-			fmt.Println(err)
-		}
-	}
-
-	if is_receiver == true {
-		for {
-			payload, err := dev.RecvFrame()
-			if err != nil {
-				fmt.Println(err)
-			}
-			fmt.Println(string(payload))
-		}
-	}
-}*/

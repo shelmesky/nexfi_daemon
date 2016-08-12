@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	chy "guard/chanproxy"
+	"guard/chanproxy"
+	"guard/message"
 	"io/ioutil"
 	"os"
 	"time"
 	//"guard/control"
-	//"guard/message"
-	//"guard/secret"
 )
 
 const (
@@ -125,6 +124,8 @@ func (pipe *MessagePipe) ClosePipe() {
 type IChannel interface {
 	Send(data []byte) error
 	Recv() (payload []byte, err error)
+	Open() error
+	Close() error
 }
 
 type GuardServer struct {
@@ -150,6 +151,8 @@ func (guard *GuardServer) Start() {
 			break
 		}
 		time.Sleep(time.Second)
+		key := message.Generator()
+		fmt.Println("SecretKey: ", message.ConvToString(key))
 		fmt.Println("Guard Server Run...............Server")
 	}
 	guard.chsync <- 0
@@ -183,6 +186,8 @@ func (guard *GuardClient) Start() {
 		if guard.isExit {
 			break
 		}
+
+		fmt.Println("Start receive data")
 		payload, err := guard.chtran.Recv()
 		if err != nil {
 			fmt.Println(err)
@@ -214,24 +219,13 @@ func main() {
 	}
 
 	// channel init
-	chproxy := chy.ChannelProxy{DesMac: _broadcast_mac_addr, NicInt: config.GetNIC()}
+	var chproxy IChannel = chanproxy.CreateChannelProxy(_broadcast_mac_addr, config.GetNIC())
 	err := chproxy.Open()
 	if err != nil {
-		fmt.Println("open network interface: ", chproxy.GetNicInt(), " err: ", err)
+		fmt.Println("open network interface, err: ", err)
 		return
 	}
 	defer chproxy.Close()
-
-	// guard client for recving and handling the key sync message
-	gc := GuardClient{config: config}
-	gc.Open()
-	go gc.Start()
-	defer gc.Close()
-
-	// guard server for sending the key sync message
-	gs := GuardServer{config: config}
-	gs.Open()
-	defer gs.Close()
 
 	// read and handle messages from the button pipe
 	btnpip := MessagePipe{}
@@ -241,6 +235,17 @@ func main() {
 		return
 	}
 	defer btnpip.ClosePipe()
+
+	// guard client for recving and handling the key sync message
+	gc := GuardClient{config: config, chtran: chproxy}
+	gc.Open()
+	go gc.Start()
+	defer gc.Close()
+
+	// guard server for sending the key sync message
+	gs := GuardServer{config: config, chtran: chproxy}
+	gs.Open()
+	defer gs.Close()
 
 	// simple state switch
 	state := _s_normal
@@ -254,14 +259,13 @@ func main() {
 			case _msg_btn0_pressed_long:
 				switch state {
 				case _s_normal:
-					gc.Stop()
 					go gs.Start()
 					state = _s_keysync
 				case _s_keysync:
 					gs.Stop()
-					go gc.Start()
 					state = _s_normal
 				default:
+					fmt.Println("unknown state error")
 
 				}
 			default:
@@ -270,8 +274,6 @@ func main() {
 			}
 		}
 	}
-	gc.Stop()
-	gs.Stop()
 }
 
 // check configuration option
