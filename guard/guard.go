@@ -5,16 +5,31 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"os"
+	"time"
 	//"guard/chanproxy"
 	//"guard/control"
 	//"guard/message"
 	//"guard/secret"
 )
 
+const (
+	_s_normal = iota
+	_s_keysync
+)
+
+const (
+	_msg_btn0_pressed_long     = "pressed:btn0:long"
+	_msg_tbled_red_blink_on    = "tbled:red:blink:on"
+	_msg_tbled_red_blink_off   = "tbled:red:blink:off"
+	_msg_tbled_green_blink_on  = "tbled:green:blink:on"
+	_msg_tbled_green_blink_off = "tbled:green:blink:off"
+)
+
 /* configuration file for config some attr */
 type Configuration struct {
-	Script  string `json:"cmmand script"`       // the cmd script with full path
-	Keyfile string `json:"secret key file"`     // the file with full path for storing secret key
+	Script  string `json:"cmmand script"`       // the cmd script
+	Keyfile string `json:"secret key file"`     // the file of storing secret key
 	Nic     string `json:"nic interface"`       // the network interface for communication
 	Btnpipe string `json:"button message pipe"` // the pipe of button
 	Ledpipe string `json:"led message pipe"`    // the pipe of LED
@@ -77,41 +92,62 @@ func ArgParse() *Configuration {
 	return config
 }
 
-func ConstructConfig() {
-	config := &Configuration{}
-	config.SetScript("/root/nexfid.sh")
-	config.SetKeyFile("/root/key")
-	config.SetNIC("br-lan")
-	config.SetBtnPipe("/tmp/btnfifo")
-	config.SetLEDPipe("/tmp/ledfifo")
-	config.SaveConfig("./config.json")
-}
-
-type IGuardState interface {
-	Open()
-	Close()
-	Run()
-}
+type 
 
 type GuardServer struct {
 	config *Configuration
+	ch     chan int
+	isExit bool
 }
 
-func (guard *GuardServer) Open() {}
+func (guard *GuardServer) Open() {
+	ch := make(chan int, 1)
+}
 
-func (guard *GuardServer) Close() {}
+func (guard *GuardServer) Close() {
+	close(ch)
+}
 
-func (guard *GuardServer) Run() {}
+func (guard *GuardServer) Start() {
+	guard.isExit = false
+	for {
+		if guard.isExit {
+			break
+		}
+		time.Sleep(time.Second)
+		fmt.Println("Guard Server Run...............Server")
+	}
+	guard.ch <- 0
+}
+
+func (guard *GuardServer) Stop() {
+	guard.isExit = true
+	<-guard.ch
+}
 
 type GuardClient struct {
 	config *Configuration
+	isExit bool
 }
 
 func (guard *GuardClient) Open() {}
 
 func (guard *GuardClient) Close() {}
 
-func (guard *GuardClient) Run() {}
+func (guard *GuardClient) Start() {
+	for {
+		if guard.isExit {
+			break
+		}
+		time.Sleep(time.Second)
+		fmt.Println("Guard Client Run.............................Client")
+	}
+	guard.ch <- 0
+}
+
+func (guard *GuardClient) Stop() {
+	<-gurad.ch
+}
 
 //func Exist(filename string) bool {
 //    _, err := os.Stat(filename)
@@ -119,17 +155,71 @@ func (guard *GuardClient) Run() {}
 //}
 
 func main() {
-	/* construct configration file */
+	// construct configration file
 	config := ArgParse()
 	if config == nil {
 		return
 	}
 
-	fmt.Println(config.GetKeyFile())
-	fmt.Println(config.GetNIC())
-	fmt.Println(config.GetScript())
-	fmt.Println(config.GetLEDPipe())
-	fmt.Println(config.GetBtnPipe())
-	//	ConstructConfig()
-	//	fmt.Println("guard")
+	// guard client for recving and handling the key sync message
+	gc := GuardClient{config: config}
+	gc.Open()
+	go gc.Start()
+	defer gc.Close()
+
+	// guard server for sending the key sync message
+	gs := GuardServer{config: config}
+	gs.Open()
+	defer gs.Close()
+
+	// open button pipe
+	f, err := os.OpenFile(config.GetBtnPipe(), os.O_RDWR, 0644)
+	if err != nil {
+		return
+	}
+
+	// read and handle messages from the button pipe
+	state := _s_normal
+	data := make([]byte, 1024)
+
+	for {
+		n, err := f.Read(buf)
+		if err != nil {
+			return
+		}
+
+		msg := string(data[:n-1])
+		switch msg {
+		case _msg_btn0_pressed_long:
+			switch state {
+			case _s_normal:
+				go gs.Start()
+				state = _s_keysync
+			case _s_keysync:
+				gs.Stop()
+				state = _s_normal
+			default:
+
+			}
+		default:
+			fmt.Println("message format error from button pipe.")
+
+		}
+	}
 }
+
+// check configuration option
+//fmt.Println(config.GetKeyFile())
+//fmt.Println(config.GetNIC())
+//fmt.Println(config.GetScript())
+//fmt.Println(config.GetLEDPipe())
+//fmt.Println(config.GetBtnPipe())
+//func ConstructConfig() {
+//	config := &Configuration{}
+//	config.SetScript("/root/nexfid.sh")
+//	config.SetKeyFile("/root/key")
+//	config.SetNIC("br-lan")
+//	config.SetBtnPipe("/tmp/btnfifo")
+//	config.SetLEDPipe("/tmp/ledfifo")
+//	config.SaveConfig("./config.json")
+//}
