@@ -1,9 +1,5 @@
 {
-    "cmmand script":"/root/nexfid.sh",
-    "secret key file":"/root/key",
-    "nic interface":"enp0s3",
-    "button message pipe":"/tmp/btnfifo",
-    "led message pipe":"/tmp/ledfifo"
+    "command script": "./control.sh",
+    "nic interface name": "enp0s3",
+    "message pipe": "/tmp/msgpipe"
 }
-
-

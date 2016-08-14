@@ -4,25 +4,31 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"guard/chanproxy"
+	"guard/devctrl"
 	"guard/message"
+	"guard/protoproxy"
 	"io/ioutil"
-	"os"
 	"time"
-	//"guard/control"
 )
 
+/* control message id */
+const (
+	_type_msg_sync_key = 0
+)
+
+/* guard state : client and server */
 const (
 	_s_normal = iota
 	_s_keysync
 )
 
+/* pipe message format */
+/* led type : led color : led action : time */
 const (
-	_msg_btn0_pressed_long     = "pressed:btn0:long"
-	_msg_tbled_red_blink_on    = "tbled:red:blink:on"
-	_msg_tbled_red_blink_off   = "tbled:red:blink:off"
-	_msg_tbled_green_blink_on  = "tbled:green:blink:on"
-	_msg_tbled_green_blink_off = "tbled:green:blink:off"
+	_msg_btn0_pressed_long      = "pressed:btn0:long"
+	_msg_tbled_red_blink_on     = "tbled:red:blink:on:0"
+	_msg_tbled_red_blink_off    = "tbled:red:blink:off"
+	_msg_tbled_green_blink_on_1 = "tbled:green:blink:on:1"
 )
 
 const (
@@ -31,32 +37,25 @@ const (
 
 /* configuration file for config some attr */
 type Configuration struct {
-	Script  string `json:"cmmand script"`       // the cmd script
-	Keyfile string `json:"secret key file"`     // the file of storing secret key
-	Nic     string `json:"nic interface"`       // the network interface for communication
-	Btnpipe string `json:"button message pipe"` // the pipe of button
-	Ledpipe string `json:"led message pipe"`    // the pipe of LED
+	Script  string `json:"command script"`
+	NicName string `json:"nic interface name"`
+	MsgPipe string `json:"message pipe"`
 }
 
 /* setter and getter for attr */
-func (c *Configuration) SetNIC(nic string)         { c.Nic = nic }
+func (c *Configuration) SetNicName(nic string)     { c.NicName = nic }
 func (c *Configuration) SetScript(script string)   { c.Script = script }
-func (c *Configuration) SetKeyFile(keyfile string) { c.Keyfile = keyfile }
-func (c *Configuration) SetBtnPipe(btnpipe string) { c.Btnpipe = btnpipe }
-func (c *Configuration) SetLEDPipe(ledpipe string) { c.Ledpipe = ledpipe }
+func (c *Configuration) SetMsgPipe(msgpipe string) { c.MsgPipe = msgpipe }
 func (c *Configuration) GetScript() string         { return c.Script }
-func (c *Configuration) GetKeyFile() string        { return c.Keyfile }
-func (c *Configuration) GetNIC() string            { return c.Nic }
-func (c *Configuration) GetBtnPipe() string        { return c.Btnpipe }
-func (c *Configuration) GetLEDPipe() string        { return c.Ledpipe }
+func (c *Configuration) GetNicName() string        { return c.NicName }
+func (c *Configuration) GetMsgPipe() string        { return c.MsgPipe }
 
 /* strore configuration file */
 func (c *Configuration) SaveConfig(filename string) error {
-	data, err := json.Marshal(c)
+	data, err := json.MarshalIndent(c, "", "    ")
 	if err != nil {
 		return err
 	}
-	fmt.Println(data)
 	err = ioutil.WriteFile(filename, data, 0666)
 	if err != nil {
 		return err
@@ -95,32 +94,6 @@ func ArgParse() *Configuration {
 	return config
 }
 
-type MessagePipe struct {
-	f *os.File
-}
-
-func (pipe *MessagePipe) OpenPipe(filename string) (err error) {
-	pipe.f, err = os.OpenFile(filename, os.O_RDWR, 0644)
-	return err
-}
-
-func (pipe *MessagePipe) RecvMsg() (string, error) {
-	data := make([]byte, 1024)
-	n, err := pipe.f.Read(data)
-	if err != nil {
-		fmt.Println("button pipe read error: ", err)
-		return "", err
-	}
-
-	msg := string(data[:n-1])
-	return msg, err
-
-}
-
-func (pipe *MessagePipe) ClosePipe() {
-	pipe.f.Close()
-}
-
 type IChannel interface {
 	Send(data []byte) error
 	Recv() (payload []byte, err error)
@@ -128,9 +101,19 @@ type IChannel interface {
 	Close() error
 }
 
+type IPipeCtrl interface {
+	OpenPipe(filename string) (err error)
+	SendMsg(data string) error
+	RecvMsg() (string, error)
+	ClosePipe()
+}
+
 type GuardServer struct {
 	config *Configuration
 	chtran IChannel // channel for transmission
+	pipe   IPipeCtrl
+	wnic   *devctrl.WNICControler
+	store  *devctrl.StoreControler
 	chsync chan int // channel for sync
 	isExit bool     // is exit?
 }
@@ -146,16 +129,68 @@ func (guard *GuardServer) Close() {
 
 func (guard *GuardServer) Start() {
 	guard.isExit = false
+
+	// generate secret key
+	key := message.Generator()
+
+	// not duplicate
+	localkey := guard.store.ReadSecreKey()
+	for message.ConvToString(key) == localkey {
+		key = message.Generator()
+	}
+
+	// construct secret key message
+	msg := message.Message{}
+	msg.SetMsgType(_type_msg_sync_key)
+	msg.SetPayLen(uint16(len(key.Elem)))
+	msg.SetPayload(key.Elem[:])
+	var seqseed uint16 = 0
+
+	bassid := message.ConvToString(key)
+	meshid := "nexfi-110"
+	// update secret key
+	guard.store.StoreSecretKey(bassid, meshid)
+
+	// restart mesh network
+	guard.wnic.MeshNetworkRestart()
+
+	// trigger led
+	err := guard.pipe.SendMsg(_msg_tbled_red_blink_on)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	// sync secret key
 	for {
 		if guard.isExit {
 			break
 		}
-		time.Sleep(time.Second)
-		key := message.Generator()
-		fmt.Println("SecretKey: ", message.ConvToString(key))
-		fmt.Println("Guard Server Run...............Server")
+
+		seqseed++
+		msg.SetMsgSeq(seqseed)
+
+		// marshal secret key
+		payload, err := msg.Marshal()
+		if err != nil {
+			fmt.Println("message marshal failed.")
+		}
+
+		err = guard.chtran.Send(payload)
+		if err != nil {
+			fmt.Println("chproxy send key failed.")
+		}
+
+		fmt.Println("send data: ", message.ConvToString(key))
+
+		time.Sleep(500 * time.Millisecond)
 	}
 	guard.chsync <- 0
+
+	// turn off led
+	err = guard.pipe.SendMsg(_msg_tbled_red_blink_off)
+	if err != nil {
+		fmt.Println(err)
+	}
 }
 
 func (guard *GuardServer) Stop() {
@@ -168,6 +203,9 @@ func (guard *GuardServer) Stop() {
 type GuardClient struct {
 	config *Configuration
 	chtran IChannel // channel for transmission
+	pipe   IPipeCtrl
+	wnic   *devctrl.WNICControler
+	store  *devctrl.StoreControler
 	chsync chan int // channel for sync
 	isExit bool     // is exit?
 }
@@ -181,20 +219,74 @@ func (guard *GuardClient) Close() {
 	close(guard.chsync)
 }
 
+func (guard *GuardClient) KeyHandle(key *message.SecretKey) {
+	if !key.IsValid() {
+		fmt.Println("invalid key.")
+		return
+	}
+	fmt.Println(message.ConvToString(key))
+
+	// read local secret key
+	localkey := guard.store.ReadSecreKey()
+
+	// compare secret key
+	if message.ConvToString(key) == localkey {
+		// led notification
+		err := guard.pipe.SendMsg(_msg_tbled_green_blink_on_1)
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
+	}
+
+	bssid := message.ConvToString(key)
+	meshid := "nexfi-110"
+	// store secret key
+	guard.store.StoreSecretKey(bssid, meshid)
+
+	// led notification
+	err := guard.pipe.SendMsg(_msg_tbled_green_blink_on_1)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	// mesh network switch
+	guard.wnic.MeshNetworkRestart()
+}
+
+func (guard *GuardClient) Parse(msg *message.Message) {
+
+	// parse message headr
+	msgtype := msg.GetMsgType()
+	switch msgtype {
+	case _type_msg_sync_key:
+		key := message.Contruct(msg.GetPayload())
+		guard.KeyHandle(key)
+	default:
+		fmt.Println("unknown message type.")
+	}
+}
+
 func (guard *GuardClient) Start() {
 	for {
 		if guard.isExit {
 			break
 		}
 
-		fmt.Println("Start receive data")
+		fmt.Println("------------------receive data-----------------------")
 		payload, err := guard.chtran.Recv()
 		if err != nil {
 			fmt.Println(err)
-			time.Sleep(time.Second)
 			continue
 		}
-		fmt.Println("Guard Client Run Recv Data: ", string(payload))
+
+		msg := message.Message{}
+		err = msg.Unmarshal(payload)
+		if err != nil {
+			fmt.Println("message unmarshal error", err)
+		}
+
+		guard.Parse(&msg)
 	}
 	guard.chsync <- 0
 }
@@ -218,32 +310,37 @@ func main() {
 		return
 	}
 
-	// channel init
-	var chproxy IChannel = chanproxy.CreateChannelProxy(_broadcast_mac_addr, config.GetNIC())
-	err := chproxy.Open()
+	// protocol channel init
+	var proxy IChannel = protoproxy.CreateProtoProxy(_broadcast_mac_addr, config.GetNicName())
+	err := proxy.Open()
 	if err != nil {
 		fmt.Println("open network interface, err: ", err)
 		return
 	}
-	defer chproxy.Close()
+	defer proxy.Close()
 
 	// read and handle messages from the button pipe
-	btnpip := MessagePipe{}
-	err = btnpip.OpenPipe(config.GetBtnPipe())
+	var pipe IPipeCtrl = devctrl.CreatePipeControler()
+	err = pipe.OpenPipe(config.GetMsgPipe())
 	if err != nil {
 		fmt.Println("open button pipe error: ", err)
 		return
 	}
-	defer btnpip.ClosePipe()
+	defer pipe.ClosePipe()
+
+	// secret key storage control
+	store := devctrl.StoreControler{config.GetScript()}
+	// mesh network control
+	wnic := devctrl.WNICControler{config.GetScript()}
 
 	// guard client for recving and handling the key sync message
-	gc := GuardClient{config: config, chtran: chproxy}
+	gc := GuardClient{config: config, chtran: proxy, pipe: pipe, store: &store, wnic: &wnic}
 	gc.Open()
 	go gc.Start()
 	defer gc.Close()
 
 	// guard server for sending the key sync message
-	gs := GuardServer{config: config, chtran: chproxy}
+	gs := GuardServer{config: config, chtran: proxy, pipe: pipe, store: &store, wnic: &wnic}
 	gs.Open()
 	defer gs.Close()
 
@@ -251,7 +348,8 @@ func main() {
 	state := _s_normal
 
 	for {
-		msg, err := btnpip.RecvMsg()
+		msg, err := pipe.RecvMsg()
+		fmt.Println("message:  ", msg)
 		if err != nil {
 			fmt.Println("read button pipe error: ", err)
 		} else {
@@ -275,19 +373,3 @@ func main() {
 		}
 	}
 }
-
-// check configuration option
-//fmt.Println(config.GetKeyFile())
-//fmt.Println(config.GetNIC())
-//fmt.Println(config.GetScript())
-//fmt.Println(config.GetLEDPipe())
-//fmt.Println(config.GetBtnPipe())
-//func ConstructConfig() {
-//	config := &Configuration{}
-//	config.SetScript("/root/nexfid.sh")
-//	config.SetKeyFile("/root/key")
-//	config.SetNIC("br-lan")
-//	config.SetBtnPipe("/tmp/btnfifo")
-//	config.SetLEDPipe("/tmp/ledfifo")
-//	config.SaveConfig("./config.json")
-//}

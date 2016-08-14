@@ -1,4 +1,4 @@
-package chanproxy
+package protoproxy
 
 import (
 	"bytes"

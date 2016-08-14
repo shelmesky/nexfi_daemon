@@ -11,6 +11,18 @@ type SecretKey struct {
 	Elem [6]byte
 }
 
+func (key *SecretKey) IsValid() bool {
+	return key.Elem[0] == 0
+}
+
+func Contruct(data []byte) *SecretKey {
+	key := new(SecretKey)
+	for i, _ := range key.Elem {
+		key.Elem[i] = data[i]
+	}
+	return key
+}
+
 /* Generate a random secret key */
 func Generator() *SecretKey {
 	key := new(SecretKey)
@@ -41,9 +53,4 @@ func ConvToString(key *SecretKey) string {
 		}
 	}
 	return str
-}
-
-func ConvToBytes(hexkey string) *SecretKey {
-	return nil
-
 }
