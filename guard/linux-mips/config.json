@@ -1,0 +1,6 @@
+{
+    "command script": "./control.sh",
+    "nic interface name": "enp0s3",
+    "message pipe": "/tmp/msgfifo",
+    "led pipe": "/tmp/ledfifo"
+}
