@@ -55,6 +55,33 @@ func ConvToString(key *SecretKey) string {
 	return str
 }
 
-func GenerateMeshID(key *SecretKey) string {
-	return "n-111111"
+/*
+* function defination:
+*            | 48 + x % 10, x(-[0, 59], x(-N      char: 0-9
+* y = f(x) = | 65 + x % 26, x(-[60, 157], x(-N    char: a-z
+*            | 97 + x % 26, x(-[158, 255], x(-N   char: A-Z
+ */
+
+func AlnumGenerator(key *SecretKey) string {
+	prefix := "nf-"
+
+	var alnum [5]byte
+	for i, v := range key.Elem {
+		if i == 0 {
+			continue
+		}
+
+		alnum[i-1] = func(c byte) byte {
+			var r byte = 0
+			if c <= 59 {
+				r = 48 + c%10
+			} else if c <= 157 {
+				r = 65 + c%26
+			} else {
+				r = 97 + c%26
+			}
+			return r
+		}(v)
+	}
+	return prefix + string(alnum[:])
 }

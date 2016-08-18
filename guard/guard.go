@@ -243,7 +243,7 @@ func (guard *GuardClient) KeyHandle(key *message.SecretKey) {
 	}
 
 	bssid := message.ConvToString(key)
-	meshid := message.GenerateMeshID(key)
+	meshid := message.AlnumGenerato(key)
 	// store secret key
 	guard.store.StoreSecretKey(bssid, meshid)
 
