@@ -7,6 +7,16 @@ import (
 	"os/exec"
 )
 
+const (
+	_opcode_network_restart = "2"
+	_opcode_store_key       = "1"
+	_opcode_read_key        = "0"
+)
+
+const (
+	_max_recv_buf_size = 1024
+)
+
 func Exec(name string, arg ...string) (error, string) {
 	fmt.Println(name)
 	cmd := exec.Command(name, arg...)
@@ -22,12 +32,14 @@ type WNICControler struct {
 }
 
 func (ctl *WNICControler) MeshNetworkRestart() {
-	opcode := "2"
-	err, out := Exec("/bin/sh", ctl.CmdScript, opcode)
+	err, out := Exec(
+		"/bin/sh",
+		ctl.CmdScript,
+		_opcode_network_restart)
+
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Println(out)
 }
 
 /* Store controler for storing the secret key to file */
@@ -37,20 +49,27 @@ type StoreControler struct {
 
 func (ctl *StoreControler) StoreSecretKey(bssid string, meshid string) {
 	opcode := "1"
-	err, out := Exec("/bin/sh", ctl.CmdScript, opcode, bssid, meshid)
+	err, out := Exec(
+		"/bin/sh",
+		ctl.CmdScript,
+		_opcode_store_key,
+		bssid,
+		meshid)
+
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Println(out)
 }
 
 func (ctl *StoreControler) ReadSecreKey() string {
-	opcode := "0"
-	err, out := Exec("/bin/sh", ctl.CmdScript, opcode)
+	err, out := Exec(
+		"/bin/sh",
+		ctl.CmdScript,
+		_opcode_read_key)
+
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Println(out)
 	return out
 }
 
@@ -75,7 +94,7 @@ func (pipe *PipeControler) SendMsg(data string) error {
 }
 
 func (pipe *PipeControler) RecvMsg() (string, error) {
-	data := make([]byte, 1024)
+	data := make([]byte, _max_recv_buf_size)
 	n, err := pipe.f.Read(data)
 	if err != nil {
 		fmt.Println("button pipe read error: ", err)

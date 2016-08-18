@@ -54,3 +54,7 @@ func ConvToString(key *SecretKey) string {
 	}
 	return str
 }
+
+func GenerateMeshID(key *SecretKey) string {
+	return "n-111111"
+}

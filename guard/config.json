@@ -1,0 +1,6 @@
+{
+    "command_script": "/root/nexfi-std/guard/control.sh",
+    "nic_interface_name": "br-lan",
+    "message_pipe": "/tmp/msgfifo",
+    "led_pipe": "/tmp/ledfifo"
+}

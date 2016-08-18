@@ -37,10 +37,10 @@ const (
 
 /* configuration file for config some attr */
 type Configuration struct {
-	Script  string `json:"command script"`
-	NicName string `json:"nic interface name"`
-	MsgPipe string `json:"message pipe"`
-	LedPipe string `json:"led pipe"`
+	Script  string `json:"command_script"`
+	NicName string `json:"nic_interface_name"`
+	MsgPipe string `json:"message_pipe"`
+	LedPipe string `json:"led_pipe"`
 }
 
 /* setter and getter for attr */
@@ -113,12 +113,12 @@ type IPipeCtrl interface {
 
 type GuardServer struct {
 	config *Configuration
-	chtran IChannel // channel for transmission
-	pipe   IPipeCtrl
-	wnic   *devctrl.WNICControler
-	store  *devctrl.StoreControler
-	chsync chan int // channel for sync
-	isExit bool     // is exit?
+	chtran IChannel                // channel for transmission
+	pipe   IPipeCtrl               // button message pipe
+	wnic   *devctrl.WNICControler  // network interface card controler
+	store  *devctrl.StoreControler // storage controler
+	chsync chan int                // channel for sync
+	isExit bool                    // is exit?
 }
 
 func (guard *GuardServer) Open() {
@@ -145,8 +145,8 @@ func (guard *GuardServer) Start() {
 	// construct secret key message
 	msg := message.Message{}
 	msg.SetMsgType(_type_msg_sync_key)
-	msg.SetPayLen(uint16(len(key.Elem)))
-	msg.SetPayload(key.Elem[:])
+	msg.SetMsgPayLen(uint16(len(key.Elem)))
+	msg.SetMsgPayload(key.Elem[:])
 	var seqseed uint16 = 0
 
 	bassid := message.ConvToString(key)
@@ -154,14 +154,14 @@ func (guard *GuardServer) Start() {
 	// update secret key
 	guard.store.StoreSecretKey(bassid, meshid)
 
-	// restart mesh network
-	guard.wnic.MeshNetworkRestart()
-
 	// trigger led
 	err := guard.pipe.SendMsg(_msg_tbled_red_blink_on)
 	if err != nil {
 		fmt.Println(err)
 	}
+
+	// restart mesh network
+	guard.wnic.MeshNetworkRestart()
 
 	// sync secret key
 	for {
@@ -183,9 +183,7 @@ func (guard *GuardServer) Start() {
 			fmt.Println("chproxy send key failed.")
 		}
 
-		fmt.Println("send data: ", message.ConvToString(key))
-
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
 	}
 
 	// turn off led
@@ -195,7 +193,6 @@ func (guard *GuardServer) Start() {
 	}
 
 	guard.chsync <- 0
-
 }
 
 func (guard *GuardServer) Stop() {
@@ -207,16 +204,18 @@ func (guard *GuardServer) Stop() {
 
 type GuardClient struct {
 	config *Configuration
-	chtran IChannel // channel for transmission
-	pipe   IPipeCtrl
-	wnic   *devctrl.WNICControler
-	store  *devctrl.StoreControler
-	chsync chan int // channel for sync
-	isExit bool     // is exit?
+	chtran IChannel                // channel for transmission
+	pipe   IPipeCtrl               // led message pipe
+	wnic   *devctrl.WNICControler  // network interface card controler
+	store  *devctrl.StoreControler // storage controler
+	chsync chan int                // channel for sync
+	isExit bool                    // is exit?
+	seq    uint16
 }
 
 func (guard *GuardClient) Open() {
 	guard.chsync = make(chan int, 1)
+	guard.seq = 0
 }
 
 func (guard *GuardClient) Close() {
@@ -225,18 +224,17 @@ func (guard *GuardClient) Close() {
 }
 
 func (guard *GuardClient) KeyHandle(key *message.SecretKey) {
-	if !key.IsValid() {
-		fmt.Println("invalid key.")
+	if guard.seq >= key.GetMsgSeq() || !key.IsValid() {
+		fmt.Println("seq or key invalide.")
 		return
 	}
-	fmt.Println("Handle key: ", message.ConvToString(key))
+	guard.seq = key.GetMsgSeq()
 
 	// read local secret key
 	localkey := guard.store.ReadSecreKey()
 
 	// compare secret key
 	if message.ConvToString(key) == localkey {
-		// led notification
 		err := guard.pipe.SendMsg(_msg_tbled_green_blink_on_1)
 		if err != nil {
 			fmt.Println(err)
@@ -245,7 +243,7 @@ func (guard *GuardClient) KeyHandle(key *message.SecretKey) {
 	}
 
 	bssid := message.ConvToString(key)
-	meshid := "n-000000"
+	meshid := message.GenerateMeshID(key)
 	// store secret key
 	guard.store.StoreSecretKey(bssid, meshid)
 
@@ -265,7 +263,7 @@ func (guard *GuardClient) Parse(msg *message.Message) {
 	msgtype := msg.GetMsgType()
 	switch msgtype {
 	case _type_msg_sync_key:
-		key := message.Contruct(msg.GetPayload())
+		key := message.Contruct(msg.GetMsgPayload())
 		guard.KeyHandle(key)
 	default:
 		fmt.Println("unknown message type.")
@@ -278,7 +276,6 @@ func (guard *GuardClient) Start() {
 			break
 		}
 
-		fmt.Println("------------------receive data-----------------------")
 		payload, err := guard.chtran.Recv()
 		if err != nil {
 			fmt.Println(err)
@@ -290,8 +287,6 @@ func (guard *GuardClient) Start() {
 		if err != nil {
 			fmt.Println("message unmarshal error", err)
 		}
-
-		fmt.Println(msg)
 		guard.Parse(&msg)
 	}
 	guard.chsync <- 0
@@ -317,7 +312,10 @@ func main() {
 	}
 
 	// protocol channel init
-	var proxy IChannel = protoproxy.CreateProtoProxy(_broadcast_mac_addr, config.GetNicName())
+	var proxy IChannel = protoproxy.CreateProtoProxy(
+		_broadcast_mac_addr,
+		config.GetNicName())
+
 	err := proxy.Open()
 	if err != nil {
 		fmt.Println("open network interface, err: ", err)
@@ -349,13 +347,25 @@ func main() {
 	wnic := devctrl.WNICControler{config.GetScript()}
 
 	// guard client for recving and handling the key sync message
-	gc := GuardClient{config: config, chtran: proxy, pipe: ledpipe, store: &store, wnic: &wnic}
+	gc := GuardClient{
+		config: config,
+		chtran: proxy,
+		pipe:   ledpipe,
+		store:  &store,
+		wnic:   &wnic}
+
 	gc.Open()
 	go gc.Start()
 	defer gc.Close()
 
 	// guard server for sending the key sync message
-	gs := GuardServer{config: config, chtran: proxy, pipe: ledpipe, store: &store, wnic: &wnic}
+	gs := GuardServer{
+		config: config,
+		chtran: proxy,
+		pipe:   ledpipe,
+		store:  &store,
+		wnic:   &wnic}
+
 	gs.Open()
 	defer gs.Close()
 
@@ -364,7 +374,6 @@ func main() {
 
 	for {
 		msg, err := msgpipe.RecvMsg()
-		fmt.Println("message:  ", msg)
 		if err != nil {
 			fmt.Println("read button pipe error: ", err)
 		} else {
