@@ -128,7 +128,7 @@ func ConnectServer() *gob.Encoder {
 	server_conn, err = net.DialTimeout("tcp", server_address, 3*time.Second)
 	if err != nil {
 		Log.Println("failed connect to server:", err)
-		return
+		return nil
 	}
 	return gob.NewEncoder(server_conn)
 }
