@@ -74,7 +74,6 @@ var (
 	server_address        string
 	mac_map               map[string]*macaddr
 	map_lock              *sync.Mutex
-	encoder               *gob.Encoder
 	client_channel        chan *Client
 	server_conn           net.Conn
 	client_model_map      map[string]string
@@ -118,11 +117,12 @@ func ReadNodeID() (ret string) {
 	return strings.Trim(string(data), "\n")
 }
 
-func ConnectServer() {
+func ConnectServer() *gob.Encoder {
 	var err error
 
 	if server_conn != nil {
 		server_conn.Close()
+		server_conn = nil
 	}
 
 	server_conn, err = net.DialTimeout("tcp", server_address, 3*time.Second)
@@ -130,7 +130,7 @@ func ConnectServer() {
 		Log.Println("failed connect to server:", err)
 		return
 	}
-	encoder = gob.NewEncoder(server_conn)
+	return gob.NewEncoder(server_conn)
 }
 
 func CheckFlags() {
@@ -206,7 +206,7 @@ func (d *afpacket) Read(to []byte) error {
 }
 
 func ClientSender() {
-	ConnectServer()
+	encoder := ConnectServer()
 
 	for {
 		if encoder != nil {
@@ -214,12 +214,12 @@ func ClientSender() {
 			err := encoder.Encode(client)
 			if err != nil {
 				Log.Println("send data to server failed:", err)
-				ConnectServer()
+				encoder = ConnectServer()
 			}
 			client_pool.Put(client)
 		} else {
 			time.Sleep(1 * time.Second)
-			ConnectServer()
+			encoder = ConnectServer()
 		}
 	}
 }
