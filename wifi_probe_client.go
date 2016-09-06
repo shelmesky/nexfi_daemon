@@ -244,16 +244,51 @@ func CheckExipreMAC() {
 	}
 }
 
+type RelationGraph struct {
+	phonetype string
+	keyword   string
+}
+
+var relation []RelationGraph = []RelationGraph{
+	// iphone type
+	{"iPhone", "iPhone"},
+
+	// MIUI type
+	{"XiaoMi", "MIUI"},
+	{"XiaoMi", "XiaoMi"},
+	{"XiaoMi", "MI 4LTE"},
+
+	// HUAWEI type
+	{"HuaWei", "HUAWEI"},
+	{"HuaWei", "Honor"},
+
+	// ZTE type
+	{"ZTE", "ZTE"},
+
+	// Nexus type
+	{"Nexus", "Nexus"}}
+
 func UpdateClientBrower(mac_str, browser_agent string) {
 	client_model_map_lock.Lock()
 	defer client_model_map_lock.Unlock()
 
-	if strings.Contains(browser_agent, "iPhone") {
-		client_model_map[mac_str] = "iPhone"
-		if DEBUG {
-			Log.Printf("%s is iPhone\n", mac_str)
+	Log.Println("====> ", browser_agent, "====> ", mac_str)
+	for _, v := range relation {
+		if strings.Contains(browser_agent, v.keyword) {
+			client_model_map[mac_str] = v.phonetype
+			if DEBUG {
+				Log.Printf("%s is %s\n", mac_str, v.phonetype)
+			}
+			break
 		}
 	}
+
+	//	if strings.Contains(browser_agent, "iPhone") {
+	//		client_model_map[mac_str] = "iPhone"
+	//		if DEBUG {
+	//			Log.Printf("%s is iPhone\n", mac_str)
+	//		}
+	//	}
 }
 
 func HandleFrame(frame []byte) {
