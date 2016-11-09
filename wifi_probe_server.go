@@ -101,6 +101,8 @@ func HandleConnection(conn net.Conn) {
 	for {
 		client := client_pool.Get().(*Client)
 		client.Model = ""
+		client.RSSI = 0
+		client.SSID = ""
 		err := decoder.Decode(client)
 		if err == io.EOF {
 			log.Println("connection close")
