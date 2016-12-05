@@ -205,6 +205,37 @@ func (d *afpacket) Read(to []byte) error {
 	return nil
 }
 
+func (d *afpacket) SetProbeReqFilter() (err error) {
+	var sock_fprog syscall.SockFprog
+
+	sock_filter := []syscall.SockFilter{
+		{0x30, 0, 0, 0x00000003},
+		{0x64, 0, 0, 0x00000008},
+		{0x7, 0, 0, 0x00000000},
+		{0x30, 0, 0, 0x00000002},
+		{0x4c, 0, 0, 0x00000000},
+		{0x7, 0, 0, 0x00000000},
+		{0x50, 0, 0, 0x00000000},
+		{0x54, 0, 0, 0x000000fc},
+		{0x15, 0, 1, 0x00000040},
+		{0x6, 0, 0, 0x00000800},
+		{0x6, 0, 0, 0x00000000},
+	}
+
+	sock_fprog.Len = uint16(len(sock_filter))
+	sock_fprog.Filter = &sock_filter[0]
+
+	_, _, errno := syscall.Syscall6(syscall.SYS_SETSOCKOPT, uintptr(d.fd), uintptr(syscall.SOL_SOCKET),
+		uintptr(syscall.SO_ATTACH_FILTER), uintptr(unsafe.Pointer(&sock_fprog)), 0x10, 0)
+
+	if errno != 0 {
+		err = errno
+		return err
+	}
+
+	return nil
+}
+
 func ClientSender() {
 	encoder := ConnectServer()
 
@@ -428,6 +459,12 @@ func main() {
 	dev, err := newDev(iface)
 	if err != nil {
 		Log.Println(err)
+		return
+	}
+
+	err = dev.SetProbeReqFilter()
+	if err != nil {
+		log.Println(err)
 		return
 	}
 
