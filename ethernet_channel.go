@@ -213,6 +213,30 @@ func newDev(ifce *net.Interface, frameFilter FrameFilter, max_payload_size int) 
 	return d, err
 }
 
+func (d *afpacket) SetKernelFilter() (err error) {
+	var sock_fprog syscall.SockFprog
+
+	sock_filter := []syscall.SockFilter{
+		{0x28, 0, 0, 0x0000000c},
+		{0x15, 0, 1, 0x000055aa},
+		{0x6, 0, 0, 0x0000ffff},
+		{0x6, 0, 0, 0x00000000},
+	}
+
+	sock_fprog.Len = uint16(len(sock_filter))
+	sock_fprog.Filter = &sock_filter[0]
+
+	_, _, errno := syscall.Syscall6(syscall.SYS_SETSOCKOPT, uintptr(d.fd), uintptr(syscall.SOL_SOCKET),
+		uintptr(syscall.SO_ATTACH_FILTER), uintptr(unsafe.Pointer(&sock_fprog)), 0x10, 0)
+
+	if errno != 0 {
+		err = errno
+		return err
+	}
+
+	return nil
+}
+
 func (d *afpacket) Interface() *net.Interface {
 	return d.ifce
 }
@@ -337,6 +361,12 @@ func main() {
 	}
 
 	dev, err := newDev(iface, nil, MAX_PAYLOAD_SIZE)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	err = dev.SetKernelFilter()
 	if err != nil {
 		fmt.Println(err)
 		return
