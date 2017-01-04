@@ -537,12 +537,13 @@ func HandleFrame(frame []byte) {
 	}
 }
 
-func MainHandler(w http.ResponseWriter, r *http.Request) {
+func APIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("byebye"))
 }
 
 func StartHTTPServer() {
-	http.HandleFunc("/", MainHandler)
+	http.HandleFunc("/api", APIHandler)
+	http.Handle("/", http.FileServer(http.Dir(".")))
 	Log.Fatal(http.ListenAndServe(LOCAL_HTTP_SERVER, nil))
 }
 
