@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"runtime/debug"
 	"strings"
@@ -26,6 +27,7 @@ const (
 	ENABLE_BEACON_FRAME  = false
 	ENABLE_PROBE_REQUEST = true
 	MAC_ADDRESS_PATH     = "/sys/devices/platform/ar933x_wmac/net/wlan0/phy80211/macaddress"
+	LOCAL_HTTP_SERVER    = "0.0.0.0:8080"
 )
 
 var (
@@ -72,6 +74,7 @@ type macaddr struct {
 var (
 	monitor_interface     string
 	server_address        string
+	start_http_server     bool
 	mac_map               map[string]*macaddr
 	map_lock              *sync.Mutex
 	client_channel        chan *Client
@@ -90,6 +93,7 @@ type afpacket struct {
 func init() {
 	flag.StringVar(&monitor_interface, "i", "", "Network interface name to monitor")
 	flag.StringVar(&server_address, "s", "", "http server address")
+	flag.BoolVar(&start_http_server, "http", false, "start local http server")
 
 	mac_map = make(map[string]*macaddr, 128)
 	map_lock = new(sync.Mutex)
@@ -322,6 +326,17 @@ func UpdateClientBrower(mac_str, browser_agent string) {
 	//	}
 }
 
+func FormatMACString(mac_str string) string {
+	mac_str_splited := strings.Split(mac_str, ":")
+	for idx := range mac_str_splited {
+		mac_str_item := mac_str_splited[idx]
+		if len(mac_str_item) == 1 {
+			mac_str_splited[idx] = fmt.Sprintf("0%s", mac_str_item)
+		}
+	}
+	return strings.Join(mac_str_splited, ":")
+}
+
 func HandleFrame(frame []byte) {
 	lens := int(frame[2])
 	defer func() {
@@ -347,14 +362,7 @@ func HandleFrame(frame []byte) {
 		ssi_signal := 256 - int(frame[30])
 		mac_str := fmt.Sprintf("%x:%x:%x:%x:%x:%x", int(mac[0]), int(mac[1]), int(mac[2]), int(mac[3]), int(mac[4]), int(mac[5]))
 
-		mac_str_splited := strings.Split(mac_str, ":")
-		for idx := range mac_str_splited {
-			mac_str_item := mac_str_splited[idx]
-			if len(mac_str_item) == 1 {
-				mac_str_splited[idx] = fmt.Sprintf("0%s", mac_str_item)
-			}
-		}
-		mac_str = strings.Join(mac_str_splited, ":")
+		mac_str = FormatMACString(mac_str)
 
 		ssid_str := string(ssid)
 		if DEBUG {
@@ -457,6 +465,15 @@ func HandleFrame(frame []byte) {
 	}
 }
 
+func MainHandler(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("byebye"))
+}
+
+func StartHTTPServer() {
+	http.HandleFunc("/", MainHandler)
+	Log.Fatal(http.ListenAndServe(LOCAL_HTTP_SERVER, nil))
+}
+
 func main() {
 	CheckFlags()
 
@@ -482,6 +499,10 @@ func main() {
 
 	go CheckExipreMAC()
 	go ClientSender()
+
+	if start_http_server == true {
+		go StartHTTPServer()
+	}
 
 	frame := make([]byte, 1500)
 	for {
