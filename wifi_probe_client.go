@@ -23,7 +23,7 @@ import (
 const (
 	MAC_ADDR_EXPIRE      = 30
 	DEBUG                = true
-	ENABLE_HTTP_SNIFF    = true
+	ENABLE_HTTP_SNIFF    = false
 	ENABLE_BEACON_FRAME  = false
 	ENABLE_PROBE_REQUEST = true
 	MAC_ADDRESS_PATH     = "/sys/devices/platform/ar933x_wmac/net/wlan0/phy80211/macaddress"
