@@ -346,6 +346,16 @@ func HandleFrame(frame []byte) {
 		ssid := frame[lens+26 : (lens + 26 + int(frame[lens+25]))]
 		ssi_signal := 256 - int(frame[30])
 		mac_str := fmt.Sprintf("%x:%x:%x:%x:%x:%x", int(mac[0]), int(mac[1]), int(mac[2]), int(mac[3]), int(mac[4]), int(mac[5]))
+
+		mac_str_splited := strings.Split(mac_str, ":")
+		for idx := range mac_str_splited {
+			mac_str_item := mac_str_splited[idx]
+			if len(mac_str_item) == 1 {
+				mac_str_splited[idx] = fmt.Sprintf("0%s", mac_str_item)
+			}
+		}
+		mac_str = strings.Join(mac_str_splited, ":")
+
 		ssid_str := string(ssid)
 		if DEBUG {
 			fmt.Printf("MAC: %s, SSID: %s SSI: -%d\n", mac_str, ssid_str, ssi_signal)
@@ -462,11 +472,13 @@ func main() {
 		return
 	}
 
-	err = dev.SetProbeReqFilter()
-	if err != nil {
-		log.Println(err)
-		return
-	}
+	/*
+		err = dev.SetProbeReqFilter()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+	*/
 
 	go CheckExipreMAC()
 	go ClientSender()
