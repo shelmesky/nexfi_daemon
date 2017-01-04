@@ -31,8 +31,9 @@ const (
 )
 
 var (
-	NODE_ID string
-	Log     = log.New(os.Stdout, "Prober: ", log.Ldate|log.Ltime|log.Lshortfile)
+	NODE_ID            string
+	Log                = log.New(os.Stdout, "Prober: ", log.Ldate|log.Ltime|log.Lshortfile)
+	wheel_milliseconds = NewTimingWheel(10*time.Millisecond, 2)
 )
 
 type Client struct {
@@ -43,6 +44,74 @@ type Client struct {
 	RSSI   int
 	SSID   string
 	Action int
+}
+
+type TimingWheel struct {
+	sync.Mutex
+	interval   time.Duration
+	ticker     *time.Ticker
+	quit       chan struct{}
+	maxTimeout time.Duration
+	cs         []chan struct{}
+	pos        int
+}
+
+func NewTimingWheel(interval time.Duration, buckets int) *TimingWheel {
+	w := new(TimingWheel)
+
+	w.interval = interval
+	w.quit = make(chan struct{})
+	w.pos = 0
+	w.maxTimeout = time.Duration(interval * (time.Duration(buckets)))
+	w.cs = make([]chan struct{}, buckets)
+
+	for i := range w.cs {
+		w.cs[i] = make(chan struct{})
+	}
+
+	w.ticker = time.NewTicker(interval)
+	go w.run()
+
+	return w
+}
+
+func (w *TimingWheel) Stop() {
+	close(w.quit)
+}
+
+func (w *TimingWheel) After(timeout time.Duration) <-chan struct{} {
+	if timeout >= w.maxTimeout {
+		panic("timeout too much, over maxtimeout")
+	}
+
+	w.Lock()
+	index := (w.pos + int(timeout/w.interval)) % len(w.cs)
+	b := w.cs[index]
+	w.Unlock()
+
+	return b
+}
+
+func (w *TimingWheel) run() {
+	for {
+		select {
+		case <-w.ticker.C:
+			w.onTicker()
+		case <-w.quit:
+			w.ticker.Stop()
+			return
+		}
+	}
+}
+
+func (w *TimingWheel) onTicker() {
+	w.Lock()
+	lastC := w.cs[w.pos]
+	w.cs[w.pos] = make(chan struct{})
+	w.pos = (w.pos + 1) % len(w.cs)
+	w.Unlock()
+
+	close(lastC)
 }
 
 func NewClient(addr string, from string, rssi int, ssid string, action int) *Client {
@@ -82,6 +151,7 @@ var (
 	client_model_map      map[string]string
 	client_model_map_lock *sync.RWMutex
 	client_pool           *sync.Pool
+	http_queue            chan *Client
 )
 
 type afpacket struct {
@@ -107,6 +177,8 @@ func init() {
 
 	client_model_map = make(map[string]string, 128)
 	client_model_map_lock = new(sync.RWMutex)
+
+	http_queue = make(chan *Client, 1024)
 
 	NODE_ID = ReadNodeID()
 }
