@@ -145,6 +145,7 @@ var (
 	monitor_interface     string
 	server_address        string
 	start_http_server     bool
+	start_remote_send     bool
 	mac_map               map[string]*macaddr
 	map_lock              *sync.Mutex
 	client_channel        chan *Client
@@ -165,6 +166,7 @@ func init() {
 	flag.StringVar(&monitor_interface, "i", "", "Network interface name to monitor")
 	flag.StringVar(&server_address, "s", "", "http server address")
 	flag.BoolVar(&start_http_server, "http", false, "start local http server")
+	flag.BoolVar(&start_remote_send, "send", false, "send data to remote server")
 
 	mac_map = make(map[string]*macaddr, 128)
 	map_lock = new(sync.Mutex)
@@ -187,7 +189,7 @@ func init() {
 func ReadNodeID() (ret string) {
 	data, err := ioutil.ReadFile(MAC_ADDRESS_PATH)
 	if err != nil {
-		Log.Println("read mac address failed:", err)
+		Log.Println(err)
 		return
 	}
 
@@ -343,7 +345,9 @@ func CheckExipreMAC() {
 				if DEBUG {
 					Log.Printf("MAC: %s has left\n", mac_str)
 				}
-				client_channel <- NewClient(mac_client.Addr, "leave", 0, "", 2)
+				if start_remote_send {
+					client_channel <- NewClient(mac_client.Addr, "leave", 0, "", 2)
+				}
 			}
 		}
 		map_lock.Unlock()
@@ -466,7 +470,9 @@ func HandleFrame(frame []byte) {
 			if DEBUG {
 				Log.Printf("MAC: %s has join\n", mac_str)
 			}
-			client_channel <- NewClient(mac_str, "probe", ssi_signal, ssid_str, 1)
+			if start_remote_send == true {
+				client_channel <- NewClient(mac_str, "probe", ssi_signal, ssid_str, 1)
+			}
 		}
 	}
 
@@ -530,7 +536,9 @@ func HandleFrame(frame []byte) {
 									if ok == true {
 										mac_client.Lastupdate = now
 									} else {
-										client_channel <- NewClient(mac_str, "sta", ssi_signal, "", 1)
+										if start_remote_send {
+											client_channel <- NewClient(mac_str, "sta", ssi_signal, "", 1)
+										}
 										mac_client := new(macaddr)
 										mac_client.Addr = mac_str
 										mac_client.Lastupdate = time.Now().Unix()
@@ -552,6 +560,7 @@ func APIHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		Log.Println("json marshal failed:", err)
 	}
+	client_pool.Put(client)
 	w.Write(data)
 }
 
@@ -584,8 +593,10 @@ func main() {
 		}
 	*/
 
-	go CheckExipreMAC()
-	go ClientSender()
+	if start_remote_send == true {
+		go CheckExipreMAC()
+		go ClientSender()
+	}
 
 	if start_http_server == true {
 		go StartHTTPServer()
