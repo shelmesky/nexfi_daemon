@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/binary"
 	"encoding/gob"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -22,7 +23,7 @@ import (
 
 const (
 	MAC_ADDR_EXPIRE      = 30
-	DEBUG                = true
+	DEBUG                = false
 	ENABLE_HTTP_SNIFF    = false
 	ENABLE_BEACON_FRAME  = false
 	ENABLE_PROBE_REQUEST = true
@@ -37,13 +38,13 @@ var (
 )
 
 type Client struct {
-	NodeID string
-	Addr   string
-	From   string
-	Model  string
-	RSSI   int
-	SSID   string
-	Action int
+	NodeID string `json:"node_id"`
+	Addr   string `json:"mac_addr"`
+	From   string `json:"from"`
+	Model  string `json:"model"`
+	RSSI   int    `json:"rssi"`
+	SSID   string `json:"ssid"`
+	Action int    `json:"action"`
 }
 
 type TimingWheel struct {
@@ -441,6 +442,13 @@ func HandleFrame(frame []byte) {
 			fmt.Printf("MAC: %s, SSID: %s SSI: -%d\n", mac_str, ssid_str, ssi_signal)
 		}
 
+		if start_http_server == true {
+			select {
+			case http_queue <- NewClient(mac_str, "probe", ssi_signal, ssid_str, 1):
+			case <-wheel_milliseconds.After(10 * time.Millisecond):
+			}
+		}
+
 		now := time.Now().Unix()
 
 		map_lock.Lock()
@@ -538,7 +546,12 @@ func HandleFrame(frame []byte) {
 }
 
 func APIHandler(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("byebye"))
+	client := <-http_queue
+	data, err := json.Marshal(client)
+	if err != nil {
+		Log.Println("json marshal failed:", err)
+	}
+	w.Write(data)
 }
 
 func StartHTTPServer() {
