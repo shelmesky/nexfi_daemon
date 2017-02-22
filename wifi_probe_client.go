@@ -3,17 +3,17 @@
 package main
 
 import (
-	"encoding/binary"
 	"encoding/gob"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -23,7 +23,7 @@ import (
 
 const (
 	MAC_ADDR_EXPIRE      = 30
-	DEBUG                = false
+	DEBUG                = true
 	ENABLE_HTTP_SNIFF    = false
 	ENABLE_BEACON_FRAME  = false
 	ENABLE_PROBE_REQUEST = true
@@ -117,9 +117,9 @@ func (w *TimingWheel) onTicker() {
 
 func NewClient(addr string, from string, rssi int, ssid string, action int) *Client {
 	client_model_map_lock.RLock()
-	defer client_model_map_lock.RUnlock()
 
-	client := client_pool.Get().(*Client)
+	//client := client_pool.Get().(*Client)
+	client := new(Client)
 
 	client.NodeID = NODE_ID
 	client.Addr = addr
@@ -133,6 +133,7 @@ func NewClient(addr string, from string, rssi int, ssid string, action int) *Cli
 	} else {
 		client.Model = ""
 	}
+	client_model_map_lock.RUnlock()
 	return client
 }
 
@@ -242,85 +243,15 @@ func htons(h int) (n int) {
 	return
 }
 
-func newDev(ifce *net.Interface) (*afpacket, error) {
-	var err error
-
-	d := new(afpacket)
-	d.ifce = ifce
-
-	d.fd, err = syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, htons(0x0003))
-	if err != nil {
-		return d, err
-	}
-
-	d.sockaddrLL = new(syscall.SockaddrLinklayer)
-	d.sockaddrLL.Ifindex = ifce.Index
-	d.sockaddrLL.Protocol = uint16(htons(0x0003))
-	syscall.Bind(d.fd, d.sockaddrLL)
-
-	return d, err
-}
-
-func (d *afpacket) Interface() *net.Interface {
-	return d.ifce
-}
-
-func (d *afpacket) Close() error {
-	return syscall.Close(d.fd)
-}
-
-func (d *afpacket) Read(to []byte) error {
-	defer func() {
-		if err := recover(); err != nil {
-			Log.Println(err)
-			debug.PrintStack()
-		}
-	}()
-
-	_, _, err := syscall.Recvfrom(d.fd, to, 0)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (d *afpacket) SetProbeReqFilter() (err error) {
-	var sock_fprog syscall.SockFprog
-
-	sock_filter := []syscall.SockFilter{
-		{0x30, 0, 0, 0x00000003},
-		{0x64, 0, 0, 0x00000008},
-		{0x7, 0, 0, 0x00000000},
-		{0x30, 0, 0, 0x00000002},
-		{0x4c, 0, 0, 0x00000000},
-		{0x7, 0, 0, 0x00000000},
-		{0x50, 0, 0, 0x00000000},
-		{0x54, 0, 0, 0x000000fc},
-		{0x15, 0, 1, 0x00000040},
-		{0x6, 0, 0, 0x00000800},
-		{0x6, 0, 0, 0x00000000},
-	}
-
-	sock_fprog.Len = uint16(len(sock_filter))
-	sock_fprog.Filter = &sock_filter[0]
-
-	_, _, errno := syscall.Syscall6(syscall.SYS_SETSOCKOPT, uintptr(d.fd), uintptr(syscall.SOL_SOCKET),
-		uintptr(syscall.SO_ATTACH_FILTER), uintptr(unsafe.Pointer(&sock_fprog)), 0x10, 0)
-
-	if errno != 0 {
-		err = errno
-		return err
-	}
-
-	return nil
-}
-
 func ClientSender() {
 	encoder := ConnectServer()
 
 	for {
 		if encoder != nil {
 			client := <-client_channel
+			if DEBUG {
+				Log.Printf("go client: %v\n", client)
+			}
 			err := encoder.Encode(client)
 			if err != nil {
 				Log.Println("send data to server failed:", err)
@@ -356,202 +287,48 @@ func CheckExipreMAC() {
 	}
 }
 
-type RelationGraph struct {
-	phonetype string
-	keyword   string
-}
+func HandleProbeReq(buffer string) {
+	station_list := strings.Split(buffer, "\n")
 
-var relation []RelationGraph = []RelationGraph{
-	// iphone type
-	{"iPhone", "iPhone"},
+	map_lock.Lock()
 
-	// MIUI type
-	{"XiaoMi", "MIUI"},
-	{"XiaoMi", "XiaoMi"},
-	{"XiaoMi", "MI 4LTE"},
+	if len(station_list) > 1 {
+		for idx := range station_list {
+			station := station_list[idx]
+			station_property := strings.Split(station, ",")
+			if len(station_property) > 1 {
+				mac_addr := station_property[0]
+				RSSI := station_property[1]
+				RSSI_int64, err := strconv.ParseInt(RSSI, 10, 32)
+				if err != nil {
+					Log.Println("convert RSSI to int failed:", err)
+				}
+				SSID := station_property[2]
 
-	// HUAWEI type
-	{"HuaWei", "HUAWEI"},
-	{"HuaWei", "Honor"},
+				now := time.Now().Unix()
 
-	// ZTE type
-	{"ZTE", "ZTE"},
+				mac_client, ok := mac_map[mac_addr]
+				if ok == true {
+					mac_client.Lastupdate = now
+				} else {
+					mac_client := new(macaddr)
+					mac_client.Addr = mac_addr
+					mac_client.Lastupdate = time.Now().Unix()
+					mac_map[mac_addr] = mac_client
 
-	// Nexus type
-	{"Nexus", "Nexus"}}
+					if DEBUG {
+						Log.Printf("MAC: %s has join\n", mac_addr)
+					}
 
-func UpdateClientBrower(mac_str, browser_agent string) {
-	client_model_map_lock.Lock()
-	defer client_model_map_lock.Unlock()
-
-	Log.Println("====> ", browser_agent, "====> ", mac_str)
-	for _, v := range relation {
-		if strings.Contains(browser_agent, v.keyword) {
-			client_model_map[mac_str] = v.phonetype
-			if DEBUG {
-				Log.Printf("%s is %s\n", mac_str, v.phonetype)
-			}
-			break
-		}
-	}
-
-	//	if strings.Contains(browser_agent, "iPhone") {
-	//		client_model_map[mac_str] = "iPhone"
-	//		if DEBUG {
-	//			Log.Printf("%s is iPhone\n", mac_str)
-	//		}
-	//	}
-}
-
-func FormatMACString(mac_str string) string {
-	mac_str_splited := strings.Split(mac_str, ":")
-	for idx := range mac_str_splited {
-		mac_str_item := mac_str_splited[idx]
-		if len(mac_str_item) == 1 {
-			mac_str_splited[idx] = fmt.Sprintf("0%s", mac_str_item)
-		}
-	}
-	return strings.Join(mac_str_splited, ":")
-}
-
-func HandleFrame(frame []byte) {
-	lens := int(frame[2])
-	defer func() {
-		if err := recover(); err != nil {
-			Log.Println(err)
-			debug.PrintStack()
-		}
-	}()
-
-	// beacon frame
-	if frame[lens] == 0x80 && ENABLE_BEACON_FRAME {
-		mac := frame[lens+10 : lens+16]
-		ssid := frame[lens+38 : (lens + 38 + int(frame[lens+37]))]
-		mac_str := fmt.Sprintf("%x:%x:%x:%x:%x:%x", int(mac[0]), int(mac[1]), int(mac[2]), int(mac[3]), int(mac[4]), int(mac[5]))
-		ssid_str := string(ssid)
-		fmt.Printf("MAC: %s, SSID: %s\n", mac_str, ssid_str)
-	}
-
-	// probe request frame
-	if frame[lens] == 0x40 && ENABLE_PROBE_REQUEST {
-		mac := frame[lens+10 : lens+16]
-		ssid := frame[lens+26 : (lens + 26 + int(frame[lens+25]))]
-		// at AR9331, radiotap length is different
-		ssi_signal := 256 - int(frame[30])
-		mac_str := fmt.Sprintf("%x:%x:%x:%x:%x:%x", int(mac[0]), int(mac[1]), int(mac[2]), int(mac[3]), int(mac[4]), int(mac[5]))
-
-		mac_str = FormatMACString(mac_str)
-
-		ssid_str := string(ssid)
-		if DEBUG {
-			fmt.Printf("MAC: %s, SSID: %s SSI: -%d\n", mac_str, ssid_str, ssi_signal)
-		}
-
-		if start_http_server == true {
-			select {
-			case http_queue <- NewClient(mac_str, "probe", ssi_signal, ssid_str, 1):
-			case <-wheel_milliseconds.After(10 * time.Millisecond):
-			}
-		}
-
-		now := time.Now().Unix()
-
-		map_lock.Lock()
-		defer map_lock.Unlock()
-
-		mac_client, ok := mac_map[mac_str]
-		if ok == true {
-			mac_client.Lastupdate = now
-		} else {
-			mac_client := new(macaddr)
-			mac_client.Addr = mac_str
-			mac_client.Lastupdate = time.Now().Unix()
-			mac_map[mac_str] = mac_client
-			if DEBUG {
-				Log.Printf("MAC: %s has join\n", mac_str)
-			}
-			if start_remote_send == true {
-				client_channel <- NewClient(mac_str, "probe", ssi_signal, ssid_str, 1)
-			}
-		}
-	}
-
-	// plain http request
-	if frame[lens] == 0x88 && ENABLE_HTTP_SNIFF {
-		mac := frame[lens+10 : lens+16]
-		mac_str := fmt.Sprintf("%x:%x:%x:%x:%x:%x", int(mac[0]), int(mac[1]), int(mac[2]), int(mac[3]), int(mac[4]), int(mac[5]))
-		ssi_signal := 256 - int(frame[30])
-
-		qos_data_frame := 26
-		llc_frame_start := lens + qos_data_frame
-
-		// llc frame
-		if frame[llc_frame_start] == 0xaa && frame[llc_frame_start+1] == 0xaa {
-
-			// ip frame
-			if frame[llc_frame_start+6] == 0x08 && frame[llc_frame_start+7] == 0x00 {
-
-				llc_frame := 8
-				ip_frame_start := lens + qos_data_frame + llc_frame
-
-				// ip frame is version 4 and head length is 20 bytes
-				if frame[ip_frame_start] == 0x45 {
-
-					// ip frame contains tcp frame
-					if frame[ip_frame_start+9] == 0x06 {
-
-						// payload size with tcp and data
-						ip_frame_payload := frame[ip_frame_start+2 : ip_frame_start+4]
-						ip_frame_payload_size := uint16(binary.BigEndian.Uint16(ip_frame_payload))
-
-						// ip frame head size
-						ip_frame_head_lens := int(frame[ip_frame_start] & 0x0F)
-
-						tcp_frame_start := ip_frame_start + (ip_frame_head_lens * 4)
-						http_frame_start := tcp_frame_start + 32
-
-						//Log.Printf("%x\n", frame[tcp_frame_start+12])
-
-						//http get request
-						if frame[http_frame_start] == 0x47 &&
-							frame[http_frame_start+1] == 0x45 &&
-							frame[http_frame_start+2] == 0x54 &&
-							// if packet size of ip frame paylod is more than 1024
-							// or less than 64, we ignore it.
-							ip_frame_payload_size < 1024 &&
-							ip_frame_payload_size > 64 {
-
-							http_frame_size := int(ip_frame_payload_size - 32 - 20)
-							http_head := strings.Split(string(frame[http_frame_start:http_frame_start+http_frame_size]), "\r\n")
-							for idx := range http_head {
-								http_head_item := http_head[idx]
-								if strings.HasPrefix(http_head_item, "User-Agent") {
-									UpdateClientBrower(mac_str, http_head_item)
-
-									map_lock.Lock()
-									defer map_lock.Unlock()
-
-									now := time.Now().Unix()
-									mac_client, ok := mac_map[mac_str]
-									if ok == true {
-										mac_client.Lastupdate = now
-									} else {
-										if start_remote_send {
-											client_channel <- NewClient(mac_str, "sta", ssi_signal, "", 1)
-										}
-										mac_client := new(macaddr)
-										mac_client.Addr = mac_str
-										mac_client.Lastupdate = time.Now().Unix()
-										mac_map[mac_str] = mac_client
-									}
-								}
-							}
-						}
+					if start_remote_send == true {
+						client := NewClient(mac_addr, "probe", int(RSSI_int64), SSID, 1)
+						client_channel <- client
 					}
 				}
 			}
 		}
 	}
+	map_lock.Unlock()
 }
 
 func APIHandler(w http.ResponseWriter, r *http.Request) {
@@ -564,51 +341,32 @@ func APIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
-func StartHTTPServer() {
-	http.HandleFunc("/api", APIHandler)
-	http.Handle("/", http.FileServer(http.Dir(".")))
-	Log.Fatal(http.ListenAndServe(LOCAL_HTTP_SERVER, nil))
-}
-
 func main() {
 	CheckFlags()
-
-	iface, err := net.InterfaceByName(monitor_interface)
-	if err != nil {
-		Log.Println(err)
-		return
-	}
-
-	dev, err := newDev(iface)
-	if err != nil {
-		Log.Println(err)
-		return
-	}
-
-	/*
-		err = dev.SetProbeReqFilter()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	*/
 
 	if start_remote_send == true {
 		go CheckExipreMAC()
 		go ClientSender()
 	}
 
-	if start_http_server == true {
-		go StartHTTPServer()
-	}
-
-	frame := make([]byte, 1500)
+	buffer := make([]byte, 4096)
 	for {
-		err := dev.Read(frame)
+		time.Sleep(time.Second * 1)
+
+		f, err := os.Open("/proc/nexfi_proc")
 		if err != nil {
-			Log.Println(err)
+			Log.Println("Open proc file failed:", err)
 			continue
 		}
-		HandleFrame(frame)
+
+		n, err := f.Read(buffer)
+		if err != nil && err != io.EOF {
+			Log.Println("Read proc file failed:", err)
+			continue
+		}
+
+		if n > 0 {
+			HandleProbeReq(string(buffer[:n]))
+		}
 	}
 }
