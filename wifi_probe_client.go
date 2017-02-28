@@ -153,8 +153,8 @@ var (
 	server_conn           net.Conn
 	client_model_map      map[string]string
 	client_model_map_lock *sync.RWMutex
-	client_pool           *sync.Pool
-	http_queue            chan *Client
+	//client_pool           *sync.Pool
+	http_queue chan *Client
 )
 
 type afpacket struct {
@@ -173,11 +173,13 @@ func init() {
 	map_lock = new(sync.Mutex)
 	client_channel = make(chan *Client, 1024)
 
-	client_pool = &sync.Pool{
-		New: func() interface{} {
-			return new(Client)
-		},
-	}
+	/*
+		client_pool = &sync.Pool{
+			New: func() interface{} {
+				return new(Client)
+			},
+		}
+	*/
 
 	client_model_map = make(map[string]string, 128)
 	client_model_map_lock = new(sync.RWMutex)
@@ -257,7 +259,7 @@ func ClientSender() {
 				Log.Println("send data to server failed:", err)
 				encoder = ConnectServer()
 			}
-			client_pool.Put(client)
+			//client_pool.Put(client)
 		} else {
 			time.Sleep(1 * time.Second)
 			encoder = ConnectServer()
@@ -337,7 +339,7 @@ func APIHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		Log.Println("json marshal failed:", err)
 	}
-	client_pool.Put(client)
+	//client_pool.Put(client)
 	w.Write(data)
 }
 
