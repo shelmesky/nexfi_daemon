@@ -9,6 +9,8 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"sync"
 	"time"
 )
@@ -118,10 +120,20 @@ func HandleConnection(conn net.Conn) {
 		client.Insert(mysql_table)
 		client_pool.Put(client)
 	}
+	conn.Close()
 }
 
 func CheckFlags() {
 	flag.Parse()
+}
+
+func MakeListenSock(listen_addr string) net.Listener {
+	listen_sock, err := net.Listen("tcp", listen_addr)
+	if err != nil {
+		log.Println("listen sock failed:", err)
+		return nil
+	}
+	return listen_sock
 }
 
 func main() {
@@ -130,16 +142,29 @@ func main() {
 	CheckFlags()
 	ConnectMysql()
 
-	listen_sock, err := net.Listen("tcp", listen_addr)
-	if err != nil {
-		log.Println("can not listen for tcp:", err)
+	listen_sock := MakeListenSock(listen_addr)
+
+	defer listen_sock.Close()
+
+	if listen_sock == nil {
 		return
 	}
+
 	log.Println("Server listen:", listen_addr)
+
+	go func() {
+		log.Println(http.ListenAndServe("0.0.0.0:6060", nil))
+	}()
 
 	for {
 		conn, err := listen_sock.Accept()
 		if err != nil {
+			log.Println("Server Accept() failed:", err)
+			listen_sock.Close()
+			listen_sock = MakeListenSock(listen_addr)
+			if listen_sock == nil {
+				time.Sleep(1 * time.Second)
+			}
 			continue
 		}
 		go HandleConnection(conn)
